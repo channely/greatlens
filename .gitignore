@@ -1,0 +1,11 @@
+node_modules/
+dist/
+data/settings.json
+data/db.json
+data/assets/
+data/backups/
+data/.sync/
+*.log
+.DS_Store
+# 逆向侦察的第三方资料快照不入库（版权与体积考虑）
+.research/

@@ -1,0 +1,97 @@
+import React from 'react';
+import { Routes, Route, Link, useLocation } from 'react-router-dom';
+import {
+  Clapperboard, Home as HomeIcon, FolderOpen, Settings as SettingsIcon,
+  BarChart3, Images, FolderSync as CloudSync, Play, Github, BookOpen,
+  MessageCircle, CircleHelp,
+} from 'lucide-react';
+import { currentBackendBase } from './api.js';
+import Home from './pages/Home.jsx';
+import Projects from './pages/Projects.jsx';
+import Editor from './pages/Editor.jsx';
+import Cinema from './pages/Cinema.jsx';
+import Settings from './pages/Settings.jsx';
+import Usage from './pages/Usage.jsx';
+import Assets from './pages/Assets.jsx';
+import Sync from './pages/Sync.jsx';
+
+const links = [
+  { to: '/', label: '首页', icon: HomeIcon },
+  { to: '/projects', label: '项目', icon: FolderOpen },
+  { to: '/usage', label: '用量', icon: BarChart3 },
+  { to: '/assets', label: '素材', icon: Images },
+  { to: '/sync', label: '同步', icon: CloudSync },
+  { to: '/settings', label: '设置', icon: SettingsIcon },
+];
+
+function backendLabel() {
+  const base = currentBackendBase();
+  if (!base || base === '/api') return '本机运行';
+  try { return new URL(base).hostname; } catch { return '远程后端'; }
+}
+
+function Shell() {
+  const { pathname } = useLocation();
+  const source = backendLabel();
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <Link to="/" className="side-brand">
+          <span className="side-brand-mark"><Clapperboard size={18} /></span>
+          <span>GreatLens</span>
+        </Link>
+
+        <nav className="side-nav">
+          {links.map(({ to, label, icon: Icon }) => (
+            <Link key={to} to={to} className={pathname === to || (to !== '/' && pathname.startsWith(to)) ? 'active' : ''}>
+              <Icon size={16} /> {label}
+            </Link>
+          ))}
+        </nav>
+
+        <div className="side-foot">
+          <div className="side-video" title="创作灵感">
+            <span className="play"><Play size={15} fill="currentColor" /></span>
+            <span>灵感片段 · 00:15</span>
+          </div>
+          <div className="side-backend" title={currentBackendBase()}><span className="status-dot" /> 后端：{source}</div>
+          <div className="side-lang">
+            <button className="active">中</button>
+            <button title="English（界面暂为中文）">EN</button>
+          </div>
+          <Link to="/projects" className="btn btn-primary full side-login">Login</Link>
+          <div className="side-icons">
+            <a href="https://github.com/" target="_blank" rel="noreferrer" title="代码仓库"><Github size={15} /></a>
+            <Link to="/settings" title="使用说明"><BookOpen size={15} /></Link>
+            <Link to="/sync" title="协作反馈"><MessageCircle size={15} /></Link>
+            <Link to="/settings" title="设置"><CircleHelp size={15} /></Link>
+          </div>
+        </div>
+      </aside>
+
+      <div className="main-area">
+        <div className="news-bar">
+          <span className="news-tag">News</span>
+          <span className="news-text">百炼 qwen4-max 已接入 · 图像 / 视频生成与用量看板上线 · 支持 FDX / Fountain 导入</span>
+          <span className="news-right">{source} · 本地优先</span>
+        </div>
+        <div className="main-content">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/projects" element={<Projects />} />
+            <Route path="/edit/:id" element={<Editor />} />
+            <Route path="/cinema/:id" element={<Cinema />} />
+            <Route path="/usage" element={<Usage />} />
+            <Route path="/assets" element={<Assets />} />
+            <Route path="/sync" element={<Sync />} />
+            <Route path="/settings" element={<Settings />} />
+          </Routes>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  return <Shell />;
+}
