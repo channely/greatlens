@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GreatLens — 本地优先的 AI 短剧创作工作台</title>
+<meta name="description" content="把一句话写成一整部戏。自研的 AI 原生剧本 / 短片创作工作台：语义节点编辑器、定点改写、实体生产管理与多轨时间轴，数据留在本地。">
+<style>
+  :root{
+    --primary:#1a4a35; --primary-dark:#123827; --bright:#22c55e;
+    --ink:#171a19; --ink-2:#3f3f46; --muted:#6b756f;
+    --paper:#fafcf9; --white:#fff; --border:#e3eae5;
+    --surface:#f4f8f5; --warn:#b45309; --warn-bg:#fffbeb;
+    --shadow:0 3px 16px rgba(26,74,53,.06);
+    --mono:'SF Mono',Menlo,Consolas,monospace;
+    --sans:'Noto Sans SC',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    --serif:Georgia,'Songti SC','Noto Serif SC',serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.7;
+    background-image:repeating-linear-gradient(0deg,transparent 0 31px,rgba(26,74,53,.025) 32px),repeating-linear-gradient(90deg,transparent 0 31px,rgba(26,74,53,.025) 32px);}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+
+  /* 顶栏 */
+  header{border-bottom:1px solid var(--border);background:rgba(250,252,249,.9);backdrop-filter:blur(8px);position:sticky;top:0;z-index:10}
+  .nav{height:62px;display:flex;align-items:center;justify-content:space-between}
+  .brand{display:flex;align-items:center;gap:10px;font-family:var(--serif);font-size:21px;font-weight:700;color:var(--primary);letter-spacing:-.4px}
+  .mark{width:30px;height:30px;border-radius:8px;background:var(--primary);color:#fff;display:grid;place-items:center;font-size:15px}
+  .nav-links{display:flex;gap:26px;font-size:13px;color:var(--muted);font-weight:600}
+  .nav-links a:hover{color:var(--primary)}
+  .gh-btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);border-radius:8px;padding:7px 13px;background:var(--white);color:var(--ink-2);font-size:12px;font-weight:600}
+  .gh-btn:hover{border-color:var(--primary);color:var(--primary)}
+
+  /* Hero */
+  .hero{padding:78px 0 64px}
+  .eyebrow{display:inline-flex;align-items:center;gap:7px;font-size:11px;letter-spacing:2px;font-weight:700;color:var(--primary);
+    background:var(--surface);border:1px solid var(--border);border-radius:99px;padding:6px 14px}
+  h1{font-family:var(--serif);font-size:clamp(38px,6vw,62px);line-height:1.18;letter-spacing:-1px;margin:26px 0 20px;color:var(--primary)}
+  h1 em{font-style:normal;color:var(--ink)}
+  .lead{font-size:16px;color:var(--ink-2);max-width:640px;margin:0 0 30px}
+  .cta{display:flex;gap:12px;flex-wrap:wrap}
+  .btn{display:inline-flex;align-items:center;gap:8px;border-radius:8px;padding:11px 19px;font-size:13px;font-weight:700;cursor:pointer}
+  .btn-p{background:var(--primary);color:#fff;border:1px solid var(--primary)}
+  .btn-p:hover{background:var(--primary-dark)}
+  .btn-g{background:var(--white);color:var(--ink-2);border:1px solid var(--border)}
+  .btn-g:hover{border-color:var(--primary);color:var(--primary)}
+  .note{margin-top:22px;font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:center}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--bright);border:1px solid var(--border);flex:none}
+
+  /* 能力 */
+  section{padding:62px 0}
+  .sec-head{margin-bottom:34px}
+  .kicker{font-size:11px;letter-spacing:2px;color:var(--muted);font-weight:700}
+  h2{font-family:var(--serif);font-size:clamp(26px,3.6vw,36px);color:var(--primary);margin:12px 0 10px;letter-spacing:-.5px}
+  .sec-head p{color:var(--muted);margin:0;font-size:14px}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .card{background:var(--white);border:1px solid var(--border);border-radius:12px;padding:24px;box-shadow:var(--shadow)}
+  .card .num{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .card h3{font-size:16px;margin:12px 0 8px;color:var(--ink)}
+  .card p{font-size:13px;color:var(--muted);margin:0;line-height:1.75}
+
+  /* 工作流 */
+  .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .step{position:relative;border-top:2px solid var(--primary);padding:16px 4px 0}
+  .step b{display:block;font-size:13px;color:var(--ink);margin-bottom:4px}
+  .step span{font-size:12px;color:var(--muted)}
+
+  /* 启动 */
+  .start{background:var(--surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+  .code{background:#121512;color:#dbe6de;border-radius:12px;padding:22px 24px;font-family:var(--mono);font-size:12.5px;line-height:1.9;overflow-x:auto}
+  .code .c{color:#7fae7a}
+  .start-grid{display:grid;grid-template-columns:1fr 1.15fr;gap:36px;align-items:center}
+  .fact{display:flex;gap:10px;font-size:13px;color:var(--ink-2);margin:12px 0}
+  .fact b{color:var(--primary);min-width:74px;display:inline-block}
+
+  footer{border-top:1px solid var(--border);padding:28px 0;color:var(--muted);font-size:12px}
+  .foot-in{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center}
+
+  @media(max-width:860px){.grid{grid-template-columns:repeat(2,1fr)}.flow{grid-template-columns:repeat(2,1fr)}.start-grid{grid-template-columns:1fr;gap:24px}.nav-links{display:none}}
+  @media(max-width:560px){.hero{padding:56px 0 44px}.grid,.flow{grid-template-columns:1fr}section{padding:46px 0}.nav-links{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap nav">
+    <div class="brand"><span class="mark">G</span> GreatLens</div>
+    <nav class="nav-links">
+      <a href="#capabilities">能力</a>
+      <a href="#flow">工作流</a>
+      <a href="#start">启动</a>
+    </nav>
+    <a class="gh-btn" href="https://github.com/channely/greatlens" target="_blank" rel="noreferrer">GitHub 仓库</a>
+  </div>
+</header>
+
+<div class="wrap hero">
+  <span class="eyebrow">本地优先 · 自研实现</span>
+  <h1>把一句话，<br><em>写成一整部戏</em></h1>
+  <p class="lead">从灵感、剧本到分镜与画面，一步接一步。语义节点、显式 AI 上下文、项目实体联动——创作权始终留在你手里。</p>
+  <div class="cta">
+    <a class="btn btn-p" href="#start">本地启动</a>
+    <a class="btn btn-g" href="https://github.com/channely/greatlens" target="_blank" rel="noreferrer">查看源码</a>
+  </div>
+  <div class="note"><span class="dot"></span> 单人自用定位 · 数据全部留在本地 · 密钥仅存本地设置文件</div>
+</div>
+
+<section id="capabilities">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">WHAT IT DOES</div>
+      <h2>从文字到画面，一条链路打通</h2>
+      <p>围绕创作的实际动作设计，而不是堆砌功能清单。</p>
+    </div>
+    <div class="grid">
+      <div class="card"><div class="num">01</div><h3>语义节点剧本</h3><p>场景、动作、对白、转场、字幕按语义分段编辑；自动派生角色、地点与场景，改剧本时实体跟着更新。</p></div>
+      <div class="card"><div class="num">02</div><h3>定点 AI 改写</h3><p>可精确指定光标、选中文字、节点或区间作为上下文，改写结果原位替换；知识库按需检索，不整库塞给模型。</p></div>
+      <div class="card"><div class="num">03</div><h3>实体与生产管理</h3><p>选角表、关系图谱、地点道具与连续性审计；"声明但从未同场"的关系自动标出，供结构诊断参考。</p></div>
+      <div class="card"><div class="num">04</div><h3>多轨时间轴</h3><p>画面 / 声音 / 字幕 / 节拍四轨编排，秒刻度与播放头、镜头拖动改时长、目标时长与超时提示。</p></div>
+      <div class="card"><div class="num">05</div><h3>节拍与结构</h3><p>Save the Cat 15 节拍模板与强度曲线，对照大纲检查因果起伏，一眼看出节奏平淡的段落。</p></div>
+      <div class="card"><div class="num">06</div><h3>图像 / 视频 / 导出</h3><p>百炼文生图与文生视频，素材本地持久化；FDX / PDF / DOCX / TXT 工业格式导出与 Fountain 导入。</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="flow" style="background:var(--white);border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">THE PIPELINE</div>
+      <h2>一条创作动线</h2>
+    </div>
+    <div class="flow">
+      <div class="step"><b>灵感 → 大纲</b><span>一句话 brief 生成分集结构</span></div>
+      <div class="step"><b>大纲 → 剧本</b><span>按场展开为语义节点</span></div>
+      <div class="step"><b>剧本 → 分镜</b><span>拆镜头，挂参考图作视觉约束</span></div>
+      <div class="step"><b>分镜 → 画面</b><span>时间轴编排与图像 / 视频生成</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="start" class="start">
+  <div class="wrap start-grid">
+    <div>
+      <div class="kicker">RUN LOCALLY</div>
+      <h2>三步跑起来</h2>
+      <p class="lead" style="font-size:14px;margin-bottom:0">需要 Node.js 22.23.4+。首次在「设置」页填入自己的百炼 API Key 即可开始创作。</p>
+      <div class="fact"><b>文本模型</b><span>阿里百炼 qwen4-max（含 thinking）</span></div>
+      <div class="fact"><b>图像模型</b><span>qwen-image 系列</span></div>
+      <div class="fact"><b>视频模型</b><span>wan 系列</span></div>
+      <div class="fact"><b>访问地址</b><span>http://127.0.0.1:8787</span></div>
+    </div>
+    <div class="code"><span class="c"># 克隆并安装</span>
+git clone https://github.com/channely/greatlens.git
+cd greatlens &amp;&amp; npm install
+
+<span class="c"># 构建并启动</span>
+npm run build
+npm start
+
+<span class="c"># 开发模式（前后端热更新）</span>
+npm run dev</div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-in">
+    <span>GreatLens · 自研实现 · 供个人学习与自用</span>
+    <span>功能逻辑参考公开可观察的产品形态，未复制专有源码、品牌标识或商标。</span>
+  </div>
+</footer>
+</body>
+</html>
