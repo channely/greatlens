@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { db, settings, usage, uid, makeProject, ASSETS_DIR, ROOT, ADVISORS, knowledgeIndex, searchKnowledge } from './store.js';
 import { callModel } from './ai.js';
 import { parseScreenplay } from './fdx.js';
-import { deriveEntities, analyzeRelationships, auditContinuity } from './entities.js';
+import { deriveEntities, analyzeRelationships, auditContinuity, auditReadiness } from './entities.js';
 import {
   generateImage, generateVideo, pollTask, listAssets, removeAsset,
 } from './media.js';
@@ -234,6 +234,11 @@ app.get('/api/projects/:id/continuity', (req, res) => {
   const p = db.all().projects.find(x => x.id === req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
   res.json(auditContinuity(p));
+});
+app.get('/api/projects/:id/readiness', (req, res) => {
+  const p = db.all().projects.find(x => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  res.json(auditReadiness(p));
 });
 // Knowledge：先给索引，正文按需读取（对齐官方 index → search → inspect → read）
 app.get('/api/projects/:id/knowledge', (req, res) => {

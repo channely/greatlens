@@ -1,8 +1,9 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
   Ruler, Film, Volume2, Type, Flag, Plus, Trash2,
-  ArrowUp, ArrowDown, Sparkles, Download, Clock, GripVertical,
+  ArrowUp, ArrowDown, Sparkles, Download, Clock, GripVertical, ImageOff,
 } from 'lucide-react';
+import { resolveAssetUrl } from '../api.js';
 
 // 景别选项（与「分镜」tab 保持一致）
 const SHOT_SIZES = ['大远景', '远景', '全景', '中景', '近景', '特写', '大特写'];
@@ -77,6 +78,15 @@ export default function Timeline({ ep, project, mutate, onAsk }) {
 
   // 选中项越界保护
   const selIdx = selected != null && shots[selected] ? selected : null;
+
+  // 播放头所处镜头：用于预览联动。落在镜头间隙时取最近的前一个镜头。
+  const previewIdx = useMemo(() => {
+    if (!shots.length) return null;
+    let idx = null;
+    shotStarts.forEach((start, i) => { if (ph >= start && ph < start + durations[i]) idx = i; });
+    if (idx == null && ph >= shotStarts[shotStarts.length - 1] + durations[durations.length - 1]) idx = shots.length - 1;
+    return idx;
+  }, [shots.length, shotStarts, durations, ph]);
 
   function setTarget(v) {
     const n = Math.max(1, Math.min(3600, Number(v) || 1));
@@ -187,6 +197,24 @@ export default function Timeline({ ep, project, mutate, onAsk }) {
         </div>
       </div>
 
+      {/* 播放头预览：有参考图显示画面，无则显示镜头文字占位 */}
+      {previewIdx != null && (
+        <div className="tl-preview">
+          <div className="tl-preview-frame">
+            {shots[previewIdx]?.refImage?.url
+              ? <img src={resolveAssetUrl(shots[previewIdx].refImage.url)} alt={shots[previewIdx].refImage.name || '镜头参考图'} />
+              : <div className="tl-preview-empty"><ImageOff size={20} /><span>该镜头未挂参考图</span></div>}
+            <span className="tl-preview-time">{mmss(ph)}</span>
+          </div>
+          <div className="tl-preview-info">
+            <strong>镜头 #{previewIdx + 1} · {shots[previewIdx]?.shotSize || '镜头'}</strong>
+            <p>{shots[previewIdx]?.visual || shots[previewIdx]?.scene || '（无画面摘要）'}</p>
+            {shots[previewIdx]?.refImage?.note && <p className="tl-preview-note">视觉约束：{shots[previewIdx].refImage.note}</p>}
+            <span className="tl-hint">点击时间轴上的镜头或使用标尺移动播放头</span>
+          </div>
+        </div>
+      )}
+
       {/* 无镜头时的空状态引导 */}
       {shots.length === 0 && (
         <div className="tl-empty">
@@ -224,7 +252,7 @@ export default function Timeline({ ep, project, mutate, onAsk }) {
                   key={s.id || i}
                   className={`tl-block video ${selIdx === i ? 'selected' : ''}`}
                   style={{ left: shotStarts[i] * pps, width: Math.max(durations[i] * pps, 26) }}
-                  onClick={() => setSelected(i)}
+                  onClick={() => { setSelected(i); setPlayhead(shotStarts[i]); }}
                   title={`#${i + 1} ${s.shotSize || ''} · ${durations[i]}s`}
                 >
                   <div className="tl-block-title">#{i + 1} {s.shotSize || '镜头'}</div>

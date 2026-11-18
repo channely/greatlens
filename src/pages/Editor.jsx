@@ -5,8 +5,10 @@ import {
   FileText, ListTree, Users, MapPin, BookOpen, Clapperboard,
   Loader2, Check, Wand2, ArrowUp, ArrowDown, Copy, Network,
   ClipboardList, Package, X, SlidersHorizontal, CheckSquare, ImagePlus, Ruler,
+  Undo2, Redo2, Command,
 } from 'lucide-react';
 import { api, resolveAssetUrl } from '../api.js';
+import { useTheme } from '../theme.js';
 import { CastingView, RelationshipsView, LocationsPropsView, KnowledgeView } from './Entities.jsx';
 import Timeline from './Timeline.jsx';
 import Beats from './Beats.jsx';
@@ -115,20 +117,30 @@ export default function Editor() {
   const [authLayers, setAuthLayers] = useState(['script']);
   const [showStructured, setShowStructured] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [cmdOpen, setCmdOpen] = useState(false);
+  const { theme, toggleTheme } = useTheme();
   const [derived, setDerived] = useState(null);
   const saveTimer = useRef(null);
   const chatEnd = useRef(null);
   const abortRef = useRef(null);
   const dirtyRef = useRef(false);
   const projectRef = useRef(null);
+  const pastRef = useRef([]);
+  const futureRef = useRef([]);
+  const [history, setHistory] = useState({ undo: false, redo: false });
+  const undoRef = useRef(() => {});
+  const redoRef = useRef(() => {});
+  const HISTORY_LIMIT = 60;
   const epIdxRef = useRef(epIdx);
   epIdxRef.current = epIdx;
+
+  const syncHistory = () => setHistory({ undo: pastRef.current.length > 0, redo: futureRef.current.length > 0 });
 
   useEffect(() => {
     let alive = true;
     abortRef.current?.abort();
     setProject(null);
-    api.projects.get(id).then(p => { if (alive) { projectRef.current = p; setProject(p); } })
+    api.projects.get(id).then(p => { if (alive) { pastRef.current = []; futureRef.current = []; syncHistory(); projectRef.current = p; setProject(p); } })
       .catch(e => { if (alive) setError(e.message); });
     api.ai.advisors().then(a => { if (alive) setAdvisors(a); }).catch(() => {});
     return () => { alive = false; };
@@ -154,21 +166,32 @@ export default function Editor() {
     return () => { window.removeEventListener('click', close); window.removeEventListener('scroll', close, true); };
   }, [contextMenu]);
 
+  // 撤销 / 重做：焦点在输入框时交给浏览器原生处理文本撤销，其余场景做项目级撤销。
+  useEffect(() => {
+    const onKey = e => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      const k = e.key.toLowerCase();
+      if (k === 'k') { e.preventDefault(); setCmdOpen(v => !v); return; }
+      if (k !== 'z' && k !== 'y') return;
+      const tag = document.activeElement?.tagName;
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable;
+      if (typing) return;
+      const redo = k === 'y' || e.shiftKey;
+      e.preventDefault();
+      redo ? redoRef.current() : undoRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const ep = project?.episodes?.[epIdx];
   const nodes = ep?.nodes || [];
   const selLo = Math.min(sel.start, sel.end);
   const selHi = Math.max(sel.start, sel.end);
   const hasSel = sel.start >= 0 && sel.start < nodes.length;
 
-  function mutate(fn) {
-    setProject(prev => {
-      if (!prev) return prev;
-      const next = structuredClone(prev);
-      fn(next.episodes[epIdxRef.current], next);
-      next.updatedAt = new Date().toISOString();
-      projectRef.current = next;
-      return next;
-    });
+  function scheduleSave() {
     setSaved(false);
     dirtyRef.current = true;
     clearTimeout(saveTimer.current);
@@ -179,6 +202,49 @@ export default function Editor() {
       api.projects.save(cur.id, cur).then(() => setSaved(true)).catch(e => setError(e.message));
     }, 700);
   }
+
+  // 把一次完整的项目快照提交到状态与历史栈。record=true 时记录为可撤销的一步。
+  function commit(next, record) {
+    if (!next) return;
+    const prev = projectRef.current;
+    if (record && prev) {
+      pastRef.current = [...pastRef.current.slice(-(HISTORY_LIMIT - 1)), structuredClone(prev)];
+      futureRef.current = [];
+      syncHistory();
+    }
+    next.updatedAt = new Date().toISOString();
+    projectRef.current = next;
+    setProject(next);
+    scheduleSave();
+  }
+
+  function mutate(fn) {
+    const prev = projectRef.current;
+    if (!prev) return;
+    const next = structuredClone(prev);
+    fn(next.episodes[epIdxRef.current], next);
+    commit(next, true);
+  }
+
+  function undo() {
+    if (!pastRef.current.length) return;
+    const prev = pastRef.current[pastRef.current.length - 1];
+    pastRef.current = pastRef.current.slice(0, -1);
+    futureRef.current = [...futureRef.current, structuredClone(projectRef.current)];
+    syncHistory();
+    commit(prev, false);
+  }
+
+  function redo() {
+    if (!futureRef.current.length) return;
+    const next = futureRef.current[futureRef.current.length - 1];
+    futureRef.current = futureRef.current.slice(0, -1);
+    pastRef.current = [...pastRef.current, structuredClone(projectRef.current)];
+    syncHistory();
+    commit(next, false);
+  }
+  undoRef.current = undo;
+  redoRef.current = redo;
 
   function addNode(type = 'action', afterIndex = null) {
     mutate(e => {
@@ -238,6 +304,24 @@ export default function Editor() {
     });
     return { scenes, characters };
   }, [nodes]);
+
+  // 写作现场的连续性提示：与服务端 norm 规则一致，只比对当前剧集，登记表中已有条目时才提示。
+  const normName = s => String(s || '').trim().toUpperCase().replace(/\s*（.*?）\s*/g, '').replace(/\(.*?\)/g, '').replace(/\s+/g, ' ');
+  const liveIssues = useMemo(() => {
+    if (!project) return [];
+    const out = [];
+    const charNames = new Set((project.characters || []).map(c => normName(c.name)));
+    if (charNames.size) for (const name of derivedSC.characters) {
+      if (!charNames.has(normName(name))) out.push({ kind: 'character', text: `角色「${name}」还没有档案` });
+    }
+    if (derived?.locations?.length) {
+      const locNames = new Set((project.locations || []).map(l => normName(l.name)));
+      if (locNames.size) for (const l of derived.locations) {
+        if (!locNames.has(normName(l.name))) out.push({ kind: 'location', text: `地点「${l.name}」未登记` });
+      }
+    }
+    return out;
+  }, [project, derived, derivedSC]);
 
   function contextForAI() {
     // 字级选区：只把被选中的那几个字作为上下文，配合定点替换实现真正的行内改写。
@@ -387,6 +471,9 @@ export default function Editor() {
         </div>
         <div className="ws-actions">
           <span className={`save-state ${saved ? 'ok' : ''}`}>{saved ? <><Check size={13} /> 已保存</> : '编辑中…'}</span>
+          <button className="icon-btn" title="撤销（⌘/Ctrl+Z，输入框内用文本撤销）" disabled={!history.undo} onClick={undo}><Undo2 size={15} /></button>
+          <button className="icon-btn" title="重做（⇧⌘/Ctrl+Z）" disabled={!history.redo} onClick={redo}><Redo2 size={15} /></button>
+          <button className="btn btn-ghost sm" title="命令面板（⌘/Ctrl+K）" onClick={() => setCmdOpen(true)}><Command size={13} /> 命令</button>
           <button className="btn btn-ghost sm" onClick={() => doExport('fountain')}><Download size={14} /> Fountain</button>
           <button className="btn btn-ghost sm" onClick={() => setExportOpen(true)}><Download size={14} /> 交付导出</button>
           <button className={`btn btn-ghost sm ${aiOpen ? 'active' : ''}`} onClick={() => setAiOpen(v => !v)}><Sparkles size={14} /> AI</button>
@@ -426,6 +513,14 @@ export default function Editor() {
                     <button className="btn btn-ghost sm" onClick={() => addNode('action')}><Plus size={13} /> 动作</button>
                   </div>
                 </div>
+                {liveIssues.length > 0 && (
+                  <div className="live-audit">
+                    <span>写作中新增，尚未登记：</span>
+                    {liveIssues.slice(0, 3).map((it, i) => <span className="live-audit-item" key={i}>{it.text}</span>)}
+                    {liveIssues.length > 3 && <span className="live-audit-item">等 {liveIssues.length} 项</span>}
+                    <button className="chip-link" onClick={() => { setTab('production'); setProdTab(it => liveIssues[0]?.kind === 'location' ? 'locations' : 'casting'); }}>去登记 →</button>
+                  </div>
+                )}
                 <div className="script-paper editor-paper" onClick={() => setSel({ start: -1, end: -1 })}>
                   {nodes.length === 0 && (
                     <div className="paper-empty">
@@ -591,6 +686,52 @@ export default function Editor() {
       </div>}
 
       {exportOpen && <ExportDialog project={project} onClose={() => setExportOpen(false)} onExport={doExport} />}
+      {cmdOpen && <CommandPalette
+        commands={[
+          ...TAB_GROUPS.flatMap(g => g.tabs.map(t => ({ label: `切到「${t.label}」`, group: '导航', icon: t.icon, run: () => setTab(t.id) }))),
+          { label: '新增场景标题', group: '编辑', icon: Plus, run: () => { setTab('script'); addNode('scene'); } },
+          { label: '新增动作节点', group: '编辑', icon: Plus, run: () => { setTab('script'); addNode('action'); } },
+          { label: '撤销', group: '编辑', icon: Undo2, disabled: !history.undo, run: undo },
+          { label: '重做', group: '编辑', icon: Redo2, disabled: !history.redo, run: redo },
+          { label: '打开创作助手', group: '视图', icon: Sparkles, run: () => setAiOpen(true) },
+          { label: '关闭创作助手', group: '视图', icon: X, run: () => setAiOpen(false) },
+          { label: theme === 'dark' ? '切换到浅色主题' : '切换到深色主题', group: '视图', icon: Command, run: toggleTheme },
+          { label: '交付导出…', group: '文件', icon: Download, run: () => setExportOpen(true) },
+          { label: '导出 Fountain', group: '文件', icon: Download, run: () => doExport('fountain') },
+        ]}
+        onClose={() => setCmdOpen(false)}
+      />}
+    </div>
+  );
+}
+
+function CommandPalette({ commands, onClose }) {
+  const [q, setQ] = useState('');
+  const [active, setActive] = useState(0);
+  const list = useMemo(() => commands.filter(c => !c.disabled && (c.label + c.group).toLowerCase().includes(q.trim().toLowerCase())).slice(0, 30), [commands, q]);
+  const inputRef = useRef(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  const exec = c => { if (c) { c.run(); onClose(); } };
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="cmd-palette" onClick={e => e.stopPropagation()}>
+        <input
+          ref={inputRef} className="cmd-input" placeholder="输入命令…（↑↓ 选择 · Enter 执行 · Esc 关闭）"
+          value={q} onChange={e => { setQ(e.target.value); setActive(0); }}
+          onKeyDown={e => {
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActive(i => Math.min(i + 1, list.length - 1)); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(i => Math.max(i - 1, 0)); }
+            else if (e.key === 'Enter') { e.preventDefault(); exec(list[active]); }
+            else if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+          }}
+        />
+        <div className="cmd-list">
+          {list.length === 0 && <div className="cmd-empty">没有匹配的命令</div>}
+          {list.map((c, i) => <button key={c.label} className={`cmd-row ${i === active ? 'active' : ''}`} onMouseEnter={() => setActive(i)} onClick={() => exec(c)}>
+            <span className="cmd-group">{c.group}</span><c.icon size={14} /> {c.label}
+          </button>)}
+        </div>
+      </div>
     </div>
   );
 }
@@ -600,10 +741,16 @@ function ExportDialog({ project, onClose, onExport }) {
   const [format, setFormat] = useState('pdf');
   const [convention, setConvention] = useState(project.settings?.exportConvention || project.settings?.format || 'hollywood');
   const [episodes, setEpisodes] = useState(project.episodes.map((_, i) => i));
+  const [readiness, setReadiness] = useState(null);
+  const [showInfo, setShowInfo] = useState(false);
+  const check = () => api.projects.readiness(project.id).then(setReadiness).catch(() => {});
+  useEffect(() => { check(); }, [project.id]);
   const formats = kind === 'script'
     ? [['fdx', 'FDX（Final Draft）'], ['pdf', 'PDF'], ['docx', 'DOCX'], ['txt', 'TXT']]
     : [['pdf', 'PDF'], ['docx', 'DOCX'], ['txt', 'TXT']];
   const toggleEp = i => setEpisodes(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i].sort());
+  const warns = readiness?.summary?.warn || 0;
+  const infos = readiness?.summary?.info || 0;
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal export-modal" onClick={e => e.stopPropagation()}>
@@ -621,7 +768,33 @@ function ExportDialog({ project, onClose, onExport }) {
           <div className="export-episodes"><span>选择剧集（按顺序合并）</span>
             {project.episodes.map((e, i) => <label key={e.id}><input type="checkbox" checked={episodes.includes(i)} onChange={() => toggleEp(i)} /> {e.title}</label>)}
           </div>
-          <p className="muted">FDX 仅用于 Hollywood 剧本导出；导出是快照，不会同步回项目。</p>
+
+          <div className="readiness">
+            <div className="readiness-head">
+              <span>交付前检查</span>
+              <button className="chip-link" onClick={check}>重新检查</button>
+            </div>
+            {!readiness ? <p className="muted">检查中…</p> : readiness.summary.total === 0
+              ? <div className="callout ok">未发现需要收口的矛盾，可以直接导出。</div>
+              : <>
+                <div className="readiness-summary">
+                  <span className={warns ? 'rw-warn' : ''}>{warns} 项需核对</span>
+                  <span>{infos} 项可优化</span>
+                </div>
+                {readiness.items.filter(i => i.level === 'warn').map((it, i) => (
+                  <div className="readiness-row warn" key={`w${i}`}><span className="readiness-kind">{it.group}</span><span>{it.text}</span></div>
+                ))}
+                {infos > 0 && (
+                  <>
+                    <button className="chip-link" onClick={() => setShowInfo(v => !v)}>{showInfo ? '收起' : `展开 ${infos} 项可优化`}</button>
+                    {showInfo && readiness.items.filter(i => i.level === 'info').map((it, i) => (
+                      <div className="readiness-row" key={`i${i}`}><span className="readiness-kind">{it.group}</span><span>{it.text}</span></div>
+                    ))}
+                  </>
+                )}
+              </>}
+            <p className="muted">检查只做提示，不改动项目；导出仍是当前数据的快照。</p>
+          </div>
         </div>
         <div className="modal-foot">
           <button className="btn btn-ghost" onClick={onClose}>取消</button>

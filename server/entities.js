@@ -139,6 +139,58 @@ export function auditContinuity(project) {
   return { issues, checked: { props: props.length, locations: derived.locations.length, characters: derived.characters.length } };
 }
 
+// 交付前就绪度检查：把散落在生产/时间轴/节拍各视图的矛盾集中成一份清单。
+// 这是审计的聚合视图，不改动任何实体；分级只用于导出前的自我核对，不是质量评分。
+export function auditReadiness(project) {
+  const items = [];
+  const add = (level, group, text, episode) => items.push({ level, group, text, episode });
+  const parseSec = v => {
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v;
+    const m = String(v ?? '').match(/\d+(\.\d+)?/);
+    const n = m ? parseFloat(m[0]) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : 3;
+  };
+
+  // 1) 实体一致性：直接复用连续性审计，避免两套判定标准。
+  const continuity = auditContinuity(project);
+  for (const it of continuity.issues) {
+    add('warn', '实体', it.text, null);
+  }
+
+  // 2) 时间线：目标时长与镜头实际时长、镜头描述完整性。
+  const episodes = project?.episodes || [];
+  episodes.forEach((ep, ei) => {
+    const shots = ep?.shots || [];
+    if (!shots.length) return;
+    const total = shots.reduce((s, shot) => s + parseSec(shot.duration), 0);
+    const target = ep?.timeline?.targetSeconds;
+    if (target && total > target) {
+      add('warn', '时长', `第 ${ei + 1} 集镜头累计约 ${Math.round(total)}s，超过目标 ${target}s。`, ei);
+    }
+    const noVisual = shots.filter(sh => !sh.visual?.trim()).length;
+    if (noVisual) {
+      add('info', '镜头', `第 ${ei + 1} 集有 ${noVisual} 个镜头缺画面描述，AI 分镜时只能凭场景标题推断。`, ei);
+    }
+    const noRef = shots.filter(sh => !sh.refImage).length;
+    if (noRef) {
+      add('info', '视觉', `第 ${ei + 1} 集有 ${noRef} 个镜头未挂参考图，画面一致性缺少视觉约束。`, ei);
+    }
+    // 3) 节拍：声明了节拍但没写清每拍发生什么，强度曲线就只是模板。
+    const beats = ep?.beats || [];
+    const emptyBeats = beats.filter(b => !b.summary?.trim()).length;
+    if (beats.length && emptyBeats) {
+      add('info', '结构', `第 ${ei + 1} 集有 ${emptyBeats}/${beats.length} 拍未写内容，强度曲线暂不能反映实际节奏。`, ei);
+    }
+  });
+
+  const summary = {
+    warn: items.filter(i => i.level === 'warn').length,
+    info: items.filter(i => i.level === 'info').length,
+    total: items.length,
+  };
+  return { items, summary, continuity };
+}
+
 export function entityRoutes(ADVISORS_, knowledgeIndex_, searchKnowledge_) {
   return { ADVISORS: ADVISORS_ || ADVISORS, knowledgeIndex: knowledgeIndex_ || knowledgeIndex, searchKnowledge: searchKnowledge_ || searchKnowledge };
 }

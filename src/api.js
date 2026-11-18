@@ -60,6 +60,7 @@ export const api = {
     entities: (id) => req(`/projects/${id}/entities`),
     relationships: (id) => req(`/projects/${id}/relationships`),
     continuity: (id) => req(`/projects/${id}/continuity`),
+    readiness: (id) => req(`/projects/${id}/readiness`),
     knowledgeIndex: (id) => req(`/projects/${id}/knowledge`),
     knowledgeSearch: (id, q) => req(`/projects/${id}/knowledge/search`, jsonBody({ q })),
     knowledgeRead: (id, kid) => req(`/projects/${id}/knowledge/${encodeURIComponent(kid)}`),
