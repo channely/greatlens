@@ -4,7 +4,7 @@ import {
   Save, Download, Plus, Trash2, Sparkles, Send,
   FileText, ListTree, Users, MapPin, BookOpen, Clapperboard,
   Loader2, Check, Wand2, ArrowUp, ArrowDown, Copy, Network,
-  ClipboardList, Package, X, SlidersHorizontal, CheckSquare, ImagePlus,
+  ClipboardList, Package, X, SlidersHorizontal, CheckSquare, ImagePlus, Ruler,
 } from 'lucide-react';
 import { api, resolveAssetUrl } from '../api.js';
 import { CastingView, RelationshipsView, LocationsPropsView, KnowledgeView } from './Entities.jsx';
@@ -24,16 +24,23 @@ const NODE_TYPES = [
   { value: 'comment', label: '批注', hint: '不进导出', cls: 'nt-comment' },
 ];
 
-const TABS = [
-  { id: 'script', label: '剧本', icon: FileText },
-  { id: 'outline', label: '大纲', icon: ListTree },
-  { id: 'beats', label: '节拍', icon: SlidersHorizontal },
-  { id: 'scenes', label: '场景', icon: MapPin },
-  { id: 'characters', label: '角色档案', icon: Users },
-  { id: 'production', label: '生产', icon: ClipboardList },
-  { id: 'world', label: '世界观', icon: BookOpen },
-  { id: 'shots', label: '分镜', icon: Clapperboard },
-  { id: 'timeline', label: '时间轴', icon: Clapperboard },
+// 三组：写（创作）/ 看（呈现）/ 管（资产与生产）。功能入口一个不少，仅按工作动线归拢。
+const TAB_GROUPS = [
+  { id: 'write', label: '写', hint: '创作与结构', tabs: [
+    { id: 'script', label: '剧本', icon: FileText },
+    { id: 'outline', label: '大纲', icon: ListTree },
+    { id: 'beats', label: '节拍', icon: SlidersHorizontal },
+  ] },
+  { id: 'view', label: '看', hint: '呈现与审阅', tabs: [
+    { id: 'scenes', label: '场景', icon: MapPin },
+    { id: 'shots', label: '分镜', icon: Clapperboard },
+    { id: 'timeline', label: '时间轴', icon: Ruler },
+  ] },
+  { id: 'manage', label: '管', hint: '资产与生产', tabs: [
+    { id: 'characters', label: '角色档案', icon: Users },
+    { id: 'production', label: '生产', icon: ClipboardList },
+    { id: 'world', label: '世界观', icon: BookOpen },
+  ] },
 ];
 
 const PROD_TABS = [
@@ -389,7 +396,15 @@ export default function Editor() {
       <div className="ws-body">
         <div className="ws-main">
           <div className="ws-tabs">
-            {TABS.map(t => <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}><t.icon size={14} /> {t.label}</button>)}
+            {TAB_GROUPS.map((g, gi) => (
+              <React.Fragment key={g.id}>
+                {gi > 0 && <span className="tab-divider" aria-hidden="true" />}
+                <span className="tab-group-tag" title={g.hint}>{g.label}</span>
+                {g.tabs.map(t => (
+                  <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}><t.icon size={14} /> {t.label}</button>
+                ))}
+              </React.Fragment>
+            ))}
             <div className="episode-select">
               {project.episodes.map((e, i) => <button key={e.id} className={i === epIdx ? 'active' : ''} onClick={() => { setEpIdx(i); setSel({ start: -1, end: -1 }); }}>{e.title}</button>)}
               <button className="ep-add" title="新增剧集" onClick={() => {
@@ -414,7 +429,7 @@ export default function Editor() {
                 <div className="script-paper editor-paper" onClick={() => setSel({ start: -1, end: -1 })}>
                   {nodes.length === 0 && (
                     <div className="paper-empty">
-                      <p>剧本是唯一的事实来源。</p>
+                      <p>写下第一场，场景与角色会自动出现在对应视图。</p>
                       <button className="btn btn-primary" onClick={() => addNode('scene')}>写下第一个场景标题</button>
                     </div>
                   )}
@@ -455,7 +470,7 @@ export default function Editor() {
                       />
                     </div>;
                   })}
-                  <button className="add-node-row" onClick={() => addNode('action')}><Plus size={14} /> 添加节点（⌘/Ctrl + Enter 快速插入 · Shift 点击选区 · 右键更多 · 拖动排序）</button>
+                  <button className="add-node-row" onClick={() => addNode('action')}><Plus size={14} /> 添加节点　⌘/Ctrl+Enter 插入 · Shift 点选 · 右键更多 · 拖动排序</button>
                 </div>
               </div>
             )}
@@ -517,14 +532,14 @@ export default function Editor() {
                     {authLayers.includes(l.id) ? <CheckSquare size={12} /> : null}{l.label}
                   </button>)}
                 </div></div>
-                <p className="auth-hint">世界观只有在此处显式勾选、且你在消息里点名具体键值时，助手才会写入。</p>
+                <p className="auth-hint">勾选层并在消息中点名键值，助手才会写入。</p>
               </div>}
             </div>
             <div className="chat-list">
               {messages.length === 0 && (
                 <div className="chat-hint">
                   <Wand2 size={22} />
-                  <p>拖动选中一段文字即可字级改写；Shift 点选节点做整段替换。</p>
+                  <p>拖选文字做字级改写 · Shift 点选节点做整段替换。</p>
                   <div className="suggestions">
                     {['诊断这场戏的节奏压力', '把这段改成可拍摄的动作', '给我三个反转选项'].map(s => (
                       <button key={s} onClick={() => setPrompt(s)}>{s}</button>
@@ -623,7 +638,7 @@ function OutlineView({ ep, mutate, onAsk }) {
   const outline = ep?.outline || [];
   return (
     <div className="simple-view">
-      <div className="view-head"><div><h2>大纲</h2><p className="muted">按剧集编排场次。大纲是你对结构的承诺，剧本是对它的兑现。</p></div>
+      <div className="view-head"><div><h2>大纲</h2><p className="muted">按剧集编排场次：先定冲突与反转，再写剧本。</p></div>
         <button className="btn btn-primary sm" onClick={() => mutate(e => e.outline.push({ id: `o_${Date.now()}`, text: '' }))}><Plus size={14} /> 添加条目</button>
       </div>
       <div className="outline-list">
@@ -658,7 +673,7 @@ function CharactersView({ project, mutate, names }) {
   const chars = project.characters || [];
   return (
     <div className="simple-view">
-      <div className="view-head"><div><h2>角色档案</h2><p className="muted">角色是项目级共享身份。剧本里的角色提示会自动在这里出现候选，制作信息到「生产 → 选角表」。</p></div>
+      <div className="view-head"><div><h2>角色档案</h2><p className="muted">剧本里的角色提示会在这里汇总；选角与制作信息到「生产 → 选角表」。</p></div>
         <button className="btn btn-primary sm" onClick={() => mutate((_, p) => p.characters.push({ id: `c_${Date.now()}`, name: '', bio: '', voice: '' }))}><Plus size={14} /> 新增角色</button>
       </div>
       {names.length > 0 && <div className="derived-hint"><span>剧本中检测到：</span>{names.map(n => <span className="tag" key={n}>{n}</span>)}</div>}
@@ -683,7 +698,7 @@ function WorldView({ project, mutate }) {
   const [val, setVal] = useState('');
   return (
     <div className="simple-view">
-      <div className="view-head"><div><h2>世界观</h2><p className="muted">只放 durable rules。资料放知识库，剧集后果放大纲。助手默认只读，写入需你显式点名。</p></div></div>
+      <div className="view-head"><div><h2>世界观</h2><p className="muted">只放确定的规则。资料进知识库，剧集后果进大纲；助手默认只读，写入需点名。</p></div></div>
       <div className="kv-form">
         <input value={key} onChange={e => setKey(e.target.value)} placeholder="键，如 communication_delay" />
         <input value={val} onChange={e => setVal(e.target.value)} placeholder="值，如 消息需要九年才能抵达" />
@@ -707,7 +722,7 @@ function ShotsView({ ep, mutate }) {
   const [pickerFor, setPickerFor] = useState(null); // 正在为哪个镜头选参考图（索引）
   return (
     <div className="simple-view">
-      <div className="view-head"><div><h2>分镜</h2><p className="muted">每个镜头都要有工作：它改变什么？观众看到什么？可为镜头挂参考图作为视觉约束。</p></div>
+      <div className="view-head"><div><h2>分镜</h2><p className="muted">为每个镜头写清：改变什么、观众看到什么。可挂参考图作为视觉约束。</p></div>
         <button className="btn btn-primary sm" onClick={() => mutate(e => e.shots.push({ id: `s_${Date.now()}`, scene: '', shotSize: '中景', camera: '固定', motion: '', duration: '3s', visual: '', audio: '', refImage: null }))}><Plus size={14} /> 添加镜头</button>
       </div>
       {shots.length === 0 ? <div className="empty small">还没有镜头。用 AI 的「分镜」模式从场景生成。</div> : (

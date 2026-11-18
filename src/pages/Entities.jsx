@@ -45,7 +45,7 @@ export function CastingView({ project, mutate, derived }) {
           </table>
         </div>
       )}
-      <div className="callout"><Users size={14} /> 角色是项目级身份。生成的人物图只是参考，不代表选角或授权已落实。</div>
+      <div className="callout"><Users size={14} /> 人物图仅为参考，不代表选角或授权已落实。</div>
     </div>
   );
 }
@@ -83,7 +83,7 @@ export function RelationshipsView({ project, mutate }) {
   return (
     <div className="simple-view">
       <div className="view-head">
-        <div><h2>关系图谱</h2><p className="muted">关系描述压力，不替代把它演出来的场次。绿色=剧中已同场，橙色=数据声明但从未被检验。</p></div>
+        <div><h2>关系图谱</h2><p className="muted">绿色＝剧中已同场；橙色＝已声明但未在同场戏中验证。</p></div>
         <button className="btn btn-ghost sm" onClick={load}><RefreshCw size={13} /> 重新分析</button>
       </div>
       {chars.length < 2 ? <div className="empty small">至少需要两个角色。先到「选角表」新增角色。</div> : (
@@ -147,7 +147,7 @@ export function LocationsPropsView({ project, mutate, derived }) {
 
   return (
     <div className="simple-view">
-      <div className="view-head"><div><h2>地点与道具</h2><p className="muted">地点由场景标题派生，道具是项目级实体。下面会提示剧本与制作表之间的不一致。</p></div></div>
+      <div className="view-head"><div><h2>地点与道具</h2><p className="muted">地点随场景标题更新；下面列出剧本与制作表的不一致。</p></div></div>
 
       <div className="section-block">
         <div className="section-head"><h3><MapPin size={15} /> 地点 / 勘景</h3>
@@ -227,7 +227,7 @@ export function KnowledgeView({ project, mutate }) {
   return (
     <div className="simple-view">
       <div className="view-head">
-        <div><h2>知识库</h2><p className="muted">资料是证据，不是复制指令。助手先看到索引，需要时再检索读取正文——不会把整库塞进每次对话。</p></div>
+        <div><h2>知识库</h2><p className="muted">助手先读索引，按需检索正文；资料不会被整库塞进对话。</p></div>
         <button className="btn btn-primary sm" onClick={() => mutate((_, p) => p.knowledge.push({ id: uid(), name: '新资料', type: 'reference', summary: '', tags: [], body: '' }))}><Plus size={14} /> 添加资料</button>
       </div>
       <div className="knowledge-search">
@@ -254,7 +254,7 @@ export function KnowledgeView({ project, mutate }) {
         </div>)}
         {items.length === 0 && <div className="empty small">还没有资料。研究结果、设定参考、声音样本都可以放这里。</div>}
       </div>
-      <div className="callout"><FileText size={14} /> 世界观(Worldview)是少量确定的规则；长资料放这里。助手不能把资料悄悄提升为设定。</div>
+      <div className="callout"><FileText size={14} /> 只放确定的规则。长资料进知识库，助手不会自动把它提升为设定。</div>
     </div>
   );
 }

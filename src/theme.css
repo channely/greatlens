@@ -20,7 +20,14 @@
   --muted: #717b74;
   --shadow: 0 3px 14px rgba(26, 74, 53, .06), 0 1px 3px rgba(0, 0, 0, .03);
   --shadow-lg: 0 20px 48px rgba(26, 74, 53, .13);
-  --radius: 12px;
+  --radius: var(--r-md);
+  --r-xs: 4px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 20px;
+  --warn: #b45309;
+  --warn-bg: #fffbeb;
+  --warn-border: #f0dfb8;
   --font-ui: 'Montserrat', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-display: Georgia, 'Songti SC', 'Noto Serif SC', 'Times New Roman', serif;
   --font-script: 'Courier New', Courier, 'Noto Serif SC', 'Songti SC', serif;
@@ -52,6 +59,9 @@
   --muted: #93a398;
   --shadow: 0 3px 14px rgba(0, 0, 0, .28), 0 1px 3px rgba(0, 0, 0, .2);
   --shadow-lg: 0 20px 48px rgba(0, 0, 0, .45);
+  --warn: #e0b25c;
+  --warn-bg: #2a2417;
+  --warn-border: #5a4420;
 
   --surface: #16211c;
   --surface-2: #1c2a23;
@@ -252,9 +262,9 @@ body,
 :root[data-theme="dark"] .alert.error,
 :root[data-theme="dark"] .danger-outline:hover,
 :root[data-theme="dark"] .icon-btn.danger:hover {
-  background: #3a1f1f;
-  border-color: #6b3636;
-  color: #ffb4ab;
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+  color: var(--warn);
 }
 :root[data-theme="dark"] .alert.success {
   background: #153526;
@@ -262,9 +272,9 @@ body,
   color: #9ae6b4;
 }
 :root[data-theme="dark"] .alert.warning {
-  background: #3a2e17;
-  border-color: #6b5426;
-  color: #f3d27a;
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+  color: var(--warn);
 }
 
 /* ---------- 暗色：弹窗、代码与杂项 ---------- */

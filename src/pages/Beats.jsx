@@ -37,192 +37,6 @@ function renumber(arr) {
   arr.forEach((b, i) => { b.order = i; });
 }
 
-// ---------------------------------------------------------------------------
-// 样式：全部以 .beat- 前缀隔离，颜色只取主题 CSS 变量，自动兼容浅 / 深主题
-// ---------------------------------------------------------------------------
-const css = `
-.beat-wrap * { box-sizing: border-box; }
-.beat-wrap {
-  padding: 18px 20px 28px;
-  color: var(--ink);
-  font-family: inherit;
-  line-height: 1.5;
-}
-.beat-head {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
-}
-.beat-title { display: flex; align-items: center; gap: 9px; }
-.beat-title h2 { margin: 0; font-size: 20px; letter-spacing: .01em; }
-.beat-title .beat-title-icon { color: var(--primary); }
-.beat-sub { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; max-width: 640px; }
-.beat-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-
-.beat-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 12px; border-radius: 8px; cursor: pointer;
-  font-size: 12.5px; font-family: inherit; white-space: nowrap;
-  border: 1px solid var(--border); background: var(--white); color: var(--ink);
-  transition: background .15s, border-color .15s, opacity .15s;
-}
-.beat-btn:hover { border-color: var(--primary); }
-.beat-btn:disabled { opacity: .5; cursor: not-allowed; }
-.beat-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
-.beat-btn.primary:hover { opacity: .9; }
-.beat-btn.ghost { background: var(--surface-2); color: var(--primary); border-color: var(--border); }
-.beat-btn.sm { padding: 5px 9px; font-size: 11.5px; }
-.beat-icon-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; padding: 0; border-radius: 7px; cursor: pointer;
-  border: 1px solid var(--border); background: var(--white); color: var(--muted);
-  transition: background .15s, color .15s, border-color .15s;
-}
-.beat-icon-btn:hover:not(:disabled) { color: var(--primary); border-color: var(--primary); }
-.beat-icon-btn:disabled { opacity: .35; cursor: not-allowed; }
-.beat-icon-btn.danger:hover { color: #c0392b; border-color: #c0392b; }
-
-.beat-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
-.beat-stat {
-  background: var(--white); border: 1px solid var(--border); border-radius: 10px;
-  padding: 11px 14px; box-shadow: var(--shadow); min-width: 0;
-}
-.beat-stat-label { font-size: 11.5px; color: var(--muted); }
-.beat-stat-num {
-  font-size: 22px; font-weight: 600; color: var(--primary); margin-top: 2px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.beat-stat-num.small { font-size: 15px; }
-
-.beat-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
-.beat-card {
-  background: var(--white); border: 1px solid var(--border);
-  border-radius: 12px; box-shadow: var(--shadow); padding: 14px;
-}
-.beat-card + .beat-card { margin-top: 16px; }
-.beat-section-title {
-  display: flex; align-items: center; gap: 7px;
-  font-size: 14px; font-weight: 600; margin: 0 0 12px;
-}
-.beat-section-title .beat-stitle-icon { color: var(--primary); }
-.beat-section-title .beat-count {
-  margin-left: auto; font-size: 11px; font-weight: 400; color: var(--muted);
-}
-
-/* 强度曲线 */
-.beat-curve-wrap { margin-bottom: 4px; }
-.beat-curve { width: 100%; height: auto; display: block; }
-.beat-curve-grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 4 4; }
-.beat-curve-label { fill: var(--muted); font-size: 9px; }
-.beat-curve-area { fill: var(--primary); opacity: .10; }
-.beat-curve-line { fill: none; stroke: var(--primary); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
-.beat-curve-dot { fill: var(--white); stroke: var(--primary); stroke-width: 2.5; cursor: pointer; transition: r .12s; }
-.beat-curve-dot:hover, .beat-curve-dot.active { fill: var(--primary); }
-.beat-curve-xlabel { fill: var(--muted); font-size: 9px; }
-.beat-curve-empty {
-  padding: 22px 12px; text-align: center; color: var(--muted); font-size: 12.5px;
-  background: var(--surface-2); border-radius: 9px; border: 1px dashed var(--border);
-}
-
-/* 节拍列表 */
-.beat-list { display: flex; flex-direction: column; }
-.beat-insert { display: flex; align-items: center; gap: 8px; height: 18px; }
-.beat-insert::before, .beat-insert::after { content: ''; flex: 1; height: 1px; background: var(--border); opacity: 0; transition: opacity .15s; }
-.beat-insert:hover::before, .beat-insert:hover::after { opacity: 1; }
-.beat-insert-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  height: 18px; min-width: 26px; padding: 0 6px; border-radius: 6px; cursor: pointer;
-  border: 1px dashed var(--border); background: var(--white); color: var(--muted);
-  font-size: 11px; opacity: .7; transition: opacity .15s, color .15s, border-color .15s;
-}
-.beat-insert-btn:hover { opacity: 1; color: var(--primary); border-color: var(--primary); }
-
-.beat-row {
-  border: 1px solid var(--border); border-radius: 10px; background: var(--paper);
-  padding: 11px 12px; transition: border-color .15s, box-shadow .15s;
-}
-.beat-row.active { border-color: var(--primary); box-shadow: 0 0 0 2px var(--surface-3); }
-.beat-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.beat-num {
-  flex: 0 0 auto; min-width: 26px; height: 26px; padding: 0 5px;
-  display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 7px; background: var(--surface-2); color: var(--primary);
-  font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
-}
-.beat-name {
-  flex: 1 1 180px; min-width: 0; font-size: 13.5px; font-weight: 600; color: var(--ink);
-  border: 1px solid transparent; border-radius: 6px; padding: 4px 6px; background: transparent;
-  font-family: inherit;
-}
-.beat-name:hover { border-color: var(--border); }
-.beat-name:focus { outline: none; border-color: var(--primary); background: var(--white); }
-.beat-name::-webkit-input-placeholder { color: var(--muted); font-weight: 400; }
-.beat-en { flex: 0 0 auto; font-size: 10.5px; color: var(--muted); font-style: italic; }
-.beat-row-tools { display: flex; gap: 4px; flex: 0 0 auto; }
-
-.beat-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; margin-top: 9px; }
-.beat-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.beat-field.full { grid-column: 1 / -1; }
-.beat-field-label { font-size: 10.5px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
-.beat-input, .beat-textarea {
-  width: 100%; border: 1px solid var(--border); border-radius: 7px;
-  background: var(--surface-2); color: var(--ink); font-family: inherit; font-size: 12px;
-  padding: 6px 8px; resize: vertical;
-}
-.beat-input:focus, .beat-textarea:focus { outline: none; border-color: var(--primary); }
-.beat-input::placeholder, .beat-textarea::placeholder { color: var(--muted); }
-
-.beat-tension-row { display: flex; align-items: center; gap: 10px; }
-.beat-range { flex: 1; accent-color: var(--primary); height: 18px; cursor: pointer; }
-.beat-tension-num {
-  flex: 0 0 auto; min-width: 40px; text-align: center; font-size: 11px;
-  color: var(--primary); font-weight: 600; font-variant-numeric: tabular-nums;
-}
-.beat-bar { display: flex; gap: 3px; margin-top: 6px; }
-.beat-bar-seg { height: 5px; flex: 1; border-radius: 3px; background: var(--border); }
-.beat-bar-seg.on { background: var(--primary); }
-
-.beat-refine {
-  margin-top: 9px; display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11px; color: var(--primary); background: transparent;
-  border: none; padding: 2px 0; cursor: pointer; font-family: inherit;
-}
-.beat-refine:hover { text-decoration: underline; }
-
-/* 侧栏：大纲对照 + 提示 */
-.beat-side-card {
-  background: var(--white); border: 1px solid var(--border); border-radius: 12px;
-  box-shadow: var(--shadow); padding: 14px; margin-bottom: 14px;
-}
-.beat-outline-list { display: flex; flex-direction: column; gap: 7px; max-height: 380px; overflow-y: auto; }
-.beat-outline-item {
-  display: flex; gap: 8px; font-size: 12px; color: var(--ink-2);
-  background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: 8px; padding: 7px 9px;
-}
-.beat-outline-num { flex: 0 0 auto; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
-.beat-outline-text { white-space: pre-wrap; word-break: break-word; }
-.beat-hint {
-  display: flex; gap: 8px; font-size: 11.5px; color: var(--muted); line-height: 1.6;
-  background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: 9px; padding: 10px 11px; margin-top: 12px;
-}
-.beat-hint .beat-hint-icon { flex: 0 0 auto; color: var(--primary); margin-top: 1px; }
-.beat-empty {
-  padding: 30px 16px; text-align: center; color: var(--muted);
-  border: 1px dashed var(--border); border-radius: 11px; background: var(--surface-2);
-}
-.beat-empty-icon { color: var(--primary); margin-bottom: 8px; }
-.beat-empty p { margin: 0 0 14px; font-size: 12.5px; }
-
-@media (max-width: 860px) {
-  .beat-grid { grid-template-columns: 1fr; }
-  .beat-stats { grid-template-columns: 1fr 1fr 1fr; }
-}
-@media (max-width: 520px) {
-  .beat-stats { grid-template-columns: 1fr; }
-  .beat-fields { grid-template-columns: 1fr; }
-}
-`;
 
 // ---------------------------------------------------------------------------
 // 主组件
@@ -316,7 +130,6 @@ export default function Beats({ ep, mutate, onAsk }) {
 
   return (
     <div className="beat-wrap">
-      <style>{css}</style>
 
       {/* 顶部标题与操作 */}
       <div className="beat-head">
@@ -325,7 +138,7 @@ export default function Beats({ ep, mutate, onAsk }) {
             <Activity size={19} className="beat-title-icon" />
             <h2>节拍板 Beats</h2>
           </div>
-          <p className="beat-sub">用「救猫咪」15 节拍检查一集戏的起伏：每一拍都应有可见行为与状态变化，强度曲线帮你一眼看出节奏是否平淡。</p>
+          <p className="beat-sub">载入「救猫咪」15 节拍，用曲线检查起伏；曲线过平，说明某一拍缺少状态变化。</p>
         </div>
         <div className="beat-actions">
           <button className="beat-btn ghost sm" onClick={loadTemplate}><ListOrdered size={13} /> 载入 15 节拍模板</button>
@@ -446,12 +259,12 @@ export default function Beats({ ep, mutate, onAsk }) {
                 })}
               </div>
             )}
-            <div className="beat-hint"><Info size={13} className="beat-hint-icon" /><span>节拍应与大纲因果一致：催化剂引发争执，midpoint 翻转局势，灵魂黑夜后才有第三幕转折。若发现曲线过于平直，多半是某一拍缺少状态变化。</span></div>
+            <div className="beat-hint"><Info size={13} className="beat-hint-icon" /><span>曲线过平，通常是某一拍缺少状态变化；先对照大纲检查催化剂与转折的因果。</span></div>
           </div>
 
           <div className="beat-side-card">
             <h3 className="beat-section-title"><Lightbulb size={15} className="beat-stitle-icon" /> 使用提示</h3>
-            <div className="beat-hint" style={{ marginTop: 0 }}><Sparkles size={13} className="beat-hint-icon" /><span>顶部按钮可让 AI 基于大纲与剧本给出节拍建议；每一拍右侧的「让 AI 细化这一拍」会打开 AI 面板并填入针对该拍的问题，均不会直接改动剧本。</span></div>
+            <div className="beat-hint" style={{ marginTop: 0 }}><Sparkles size={13} className="beat-hint-icon" /><span>顶部按钮让 AI 给节拍建议；每拍右侧的细化按钮会带入该拍问题，均不改剧本。</span></div>
           </div>
         </div>
       </div>

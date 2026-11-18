@@ -16,13 +16,20 @@ import Usage from './pages/Usage.jsx';
 import Assets from './pages/Assets.jsx';
 import Sync from './pages/Sync.jsx';
 
-const links = [
-  { to: '/', label: '首页', icon: HomeIcon },
-  { to: '/projects', label: '项目', icon: FolderOpen },
-  { to: '/usage', label: '用量', icon: BarChart3 },
-  { to: '/assets', label: '素材', icon: Images },
-  { to: '/sync', label: '同步', icon: CloudSync },
-  { to: '/settings', label: '设置', icon: SettingsIcon },
+// 侧栏按工作动线分组；首页与全部装饰入口保留，形态不变。
+const NAV_GROUPS = [
+  { label: '工作台', links: [
+    { to: '/', label: '首页', icon: HomeIcon },
+    { to: '/projects', label: '项目', icon: FolderOpen },
+    { to: '/assets', label: '素材', icon: Images },
+  ] },
+  { label: '运营', links: [
+    { to: '/usage', label: '用量', icon: BarChart3 },
+    { to: '/sync', label: '同步', icon: CloudSync },
+  ] },
+  { label: '系统', links: [
+    { to: '/settings', label: '设置', icon: SettingsIcon },
+  ] },
 ];
 
 function backendLabel() {
@@ -44,30 +51,40 @@ function Shell() {
         </Link>
 
         <nav className="side-nav">
-          {links.map(({ to, label, icon: Icon }) => (
-            <Link key={to} to={to} className={pathname === to || (to !== '/' && pathname.startsWith(to)) ? 'active' : ''}>
-              <Icon size={16} /> {label}
-            </Link>
+          {NAV_GROUPS.map((g, gi) => (
+            <React.Fragment key={g.label}>
+              {gi > 0 && <span className="side-group-divider" aria-hidden="true" />}
+              <span className="side-group-label">{g.label}</span>
+              {g.links.map(({ to, label, icon: Icon }) => (
+                <Link key={to} to={to} className={pathname === to || (to !== '/' && pathname.startsWith(to)) ? 'active' : ''}>
+                  <Icon size={16} /> {label}
+                </Link>
+              ))}
+            </React.Fragment>
           ))}
         </nav>
 
         <div className="side-foot">
-          <div className="side-video" title="创作灵感">
-            <span className="play"><Play size={15} fill="currentColor" /></span>
-            <span>灵感片段 · 00:15</span>
+          <div className="side-foot-section">
+            <div className="side-video" title="创作灵感">
+              <span className="play"><Play size={15} fill="currentColor" /></span>
+              <span>灵感片段 · 00:15</span>
+            </div>
+            <div className="side-backend" title={currentBackendBase()}><span className="status-dot" /> 后端：{source}</div>
           </div>
-          <div className="side-backend" title={currentBackendBase()}><span className="status-dot" /> 后端：{source}</div>
-          <div className="side-lang">
-            <button className="icon-btn theme-toggle" onClick={toggleTheme} title={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}>
-              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-            </button>
-          </div>
-          <Link to="/projects" className="btn btn-primary full side-login">Login</Link>
-          <div className="side-icons">
-            <a href="https://github.com/" target="_blank" rel="noreferrer" title="代码仓库"><Github size={15} /></a>
-            <Link to="/settings" title="使用说明"><BookOpen size={15} /></Link>
-            <Link to="/sync" title="协作反馈"><MessageCircle size={15} /></Link>
-            <Link to="/settings" title="设置"><CircleHelp size={15} /></Link>
+          <div className="side-foot-section side-foot-actions">
+            <div className="side-lang">
+              <button className="icon-btn theme-toggle" onClick={toggleTheme} title={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}>
+                {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+              </button>
+            </div>
+            <Link to="/projects" className="btn btn-primary full side-login">Login</Link>
+            <div className="side-icons">
+              <a href="https://github.com/" target="_blank" rel="noreferrer" title="代码仓库"><Github size={15} /></a>
+              <Link to="/settings" title="使用说明"><BookOpen size={15} /></Link>
+              <Link to="/sync" title="协作反馈"><MessageCircle size={15} /></Link>
+              <Link to="/settings" title="设置"><CircleHelp size={15} /></Link>
+            </div>
           </div>
         </div>
       </aside>

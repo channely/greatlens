@@ -26,83 +26,6 @@ function secLabel(sec) {
   return `${Number((Math.round(sec * 10) / 10).toFixed(1))}s`;
 }
 
-const css = `
-.tl-root { font-family: var(--font-ui, sans-serif); color: var(--ink); font-size: 13px; }
-.tl-root *, .tl-root *::before, .tl-root *::after { box-sizing: border-box; }
-.tl-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-.tl-toolbar h2 { font-size: 16px; margin: 0 8px 0 0; display: flex; align-items: center; gap: 7px; }
-.tl-spacer { flex: 1; }
-.tl-target-box { display: flex; align-items: center; gap: 6px; color: var(--muted); }
-.tl-target-box input { width: 68px; padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--white); color: var(--ink); }
-.tl-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 7px; border: 1px solid var(--border); background: var(--white); color: var(--ink); cursor: pointer; font-size: 12px; line-height: 1; }
-.tl-btn:hover { border-color: var(--primary); }
-.tl-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
-.tl-btn.ghost { background: transparent; }
-.tl-btn:disabled { opacity: .5; cursor: not-allowed; }
-
-.tl-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-.tl-stat { flex: 1 1 120px; border: 1px solid var(--border); border-radius: 9px; background: var(--white); padding: 9px 12px; }
-.tl-stat-label { color: var(--muted); font-size: 11px; margin-bottom: 3px; }
-.tl-stat-value { font-size: 18px; font-weight: 600; }
-.tl-stat.over { border-color: #e5484d; background: rgba(229, 72, 77, .08); }
-.tl-stat.over .tl-stat-value { color: #e5484d; }
-:root[data-theme="dark"] .tl-stat.over { background: rgba(229, 72, 77, .14); }
-
-.tl-board { display: flex; border: 1px solid var(--border); border-radius: var(--radius, 12px); background: var(--white); overflow: hidden; }
-.tl-labels { width: 104px; flex: 0 0 104px; border-right: 1px solid var(--border); background: var(--paper); z-index: 2; }
-.tl-label-head { height: 30px; display: flex; align-items: center; gap: 5px; padding: 0 10px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border); }
-.tl-label { height: 58px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
-.tl-label:last-child { border-bottom: 0; }
-.tl-label .tl-lname { display: flex; flex-direction: column; line-height: 1.3; }
-.tl-label .tl-lname small { color: var(--muted); font-size: 10px; }
-
-.tl-scroll { flex: 1; overflow-x: auto; overflow-y: hidden; }
-.tl-canvas { position: relative; min-width: 100%; }
-.tl-ruler { position: relative; height: 30px; border-bottom: 1px solid var(--border); background-color: var(--paper); background-image: repeating-linear-gradient(90deg, transparent 0 calc(var(--tl-grid) - 1px), var(--border) calc(var(--tl-grid) - 1px) var(--tl-grid)); cursor: crosshair; }
-.tl-tick { position: absolute; top: 0; height: 100%; border-left: 1px solid var(--border); }
-.tl-tick span { position: absolute; left: 4px; top: 6px; font-size: 10px; color: var(--muted); white-space: nowrap; }
-.tl-track { position: relative; height: 58px; border-bottom: 1px solid var(--border); background-color: var(--white); background-image: repeating-linear-gradient(90deg, transparent 0 calc(var(--tl-grid) - 1px), var(--border) calc(var(--tl-grid) - 1px) var(--tl-grid)); }
-.tl-track:last-child { border-bottom: 0; }
-.tl-target-line { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed #e5484d; z-index: 2; pointer-events: none; }
-.tl-target-line span { position: absolute; top: 2px; left: 4px; font-size: 10px; color: #e5484d; white-space: nowrap; }
-.tl-playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--primary); z-index: 4; pointer-events: none; }
-.tl-playhead::before { content: ''; position: absolute; top: 0; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--primary); }
-.tl-playhead .tl-ph-label { position: absolute; top: 1px; left: 7px; padding: 1px 5px; border-radius: 4px; background: var(--primary); color: #fff; font-size: 10px; white-space: nowrap; }
-
-.tl-block { position: absolute; top: 6px; height: 46px; border-radius: 6px; padding: 4px 7px; overflow: hidden; cursor: pointer; font-size: 11px; line-height: 1.35; border: 1px solid var(--border); background: var(--surface-2, var(--paper)); color: var(--ink); }
-.tl-block:hover { filter: brightness(1.04); }
-.tl-block.selected { outline: 2px solid var(--primary); outline-offset: 1px; z-index: 3; }
-.tl-block.video { border-color: var(--primary); background: rgba(26, 74, 53, .09); }
-.tl-block.audio { border-color: var(--sage, var(--primary)); background: rgba(120, 160, 110, .12); }
-.tl-block.subtitle { border-color: #6a8fbf; background: rgba(90, 130, 190, .12); }
-.tl-block.beat { border-color: #b8863b; background: rgba(200, 150, 60, .12); }
-:root[data-theme="dark"] .tl-block.video { background: rgba(67, 196, 122, .16); }
-:root[data-theme="dark"] .tl-block.audio { background: rgba(127, 174, 122, .14); }
-:root[data-theme="dark"] .tl-block.subtitle { background: rgba(110, 150, 210, .16); }
-:root[data-theme="dark"] .tl-block.beat { background: rgba(210, 160, 70, .16); }
-.tl-block-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tl-block-sub { color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tl-resize { position: absolute; top: 0; right: 0; bottom: 0; width: 9px; cursor: ew-resize; display: flex; align-items: center; justify-content: center; color: var(--muted); }
-.tl-resize:hover { color: var(--primary); }
-.tl-placeholder { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 11px; font-style: italic; }
-
-.tl-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: 9px; margin-bottom: 12px; }
-.tl-empty p { margin: 0; font-size: 12px; }
-
-.tl-details { margin-top: 12px; border: 1px solid var(--border); border-radius: var(--radius, 12px); background: var(--white); padding: 12px 14px; }
-.tl-details-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.tl-details-head strong { font-size: 13px; }
-.tl-details-head .tl-spacer { flex: 1; }
-.tl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.tl-field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
-.tl-field input, .tl-field select, .tl-field textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--white); color: var(--ink); font-size: 12px; font-family: inherit; resize: vertical; }
-.tl-field textarea { min-height: 46px; }
-.tl-span2 { grid-column: span 2; }
-.tl-span3 { grid-column: span 3; }
-.tl-detail-actions { display: flex; gap: 8px; margin-top: 10px; }
-.tl-detail-actions .danger { color: #e5484d; border-color: #e5484d; }
-.tl-hint { color: var(--muted); font-size: 11px; }
-`;
 
 export default function Timeline({ ep, project, mutate, onAsk }) {
   const shots = ep?.shots || [];
@@ -192,7 +115,7 @@ export default function Timeline({ ep, project, mutate, onAsk }) {
   function importFromShots() {
     const hasScene = nodes.some(n => n.type === 'scene');
     if (!shots.length && hasScene) {
-      onAsk('剧本里已有场景，但还没有镜头。请到「分镜」tab 用 AI 分镜模式把这些场景拆成镜头；完成后回到「时间轴」即可看到。');
+      onAsk('剧本已有场景，还没有镜头。到「分镜」用 AI 拆镜，回来即可排时长。');
     } else {
       onAsk('请根据当前剧本场景，生成一份标注了每个镜头时长的分镜表');
     }
@@ -236,7 +159,6 @@ export default function Timeline({ ep, project, mutate, onAsk }) {
 
   return (
     <div className="tl-root">
-      <style>{css}</style>
 
       {/* 工具栏 */}
       <div className="tl-toolbar">
@@ -269,7 +191,7 @@ export default function Timeline({ ep, project, mutate, onAsk }) {
       {shots.length === 0 && (
         <div className="tl-empty">
           <Film size={22} />
-          <p>还没有镜头。时间轴需要镜头作为素材——让 AI 把当前场景拆成镜头，或到「分镜」tab 手动添加。</p>
+          <p>还没有镜头。到「分镜」把场景拆成镜头，回来即可排时长。</p>
           <button className="tl-btn primary" onClick={() => onAsk('把当前场景拆成可拍摄的镜头列表，标注每个镜头的时长')}>
             <Sparkles size={14} /> 让 AI 拆镜头
           </button>

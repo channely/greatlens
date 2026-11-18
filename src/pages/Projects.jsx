@@ -147,7 +147,7 @@ export default function Projects() {
       <div className="page-head">
         <div>
           <h1>项目</h1>
-          <p className="muted">所有创作都从一个项目开始。数据保存在本地 <code>data/db.json</code>。</p>
+          <p className="muted">数据保存在本机。新建项目，或从 FDX / Fountain 导入。 <code>data/db.json</code>。</p>
         </div>
         <div className="head-actions">
           <button className="btn btn-ghost" onClick={() => attachRef.current?.click()}><BookOpen size={16} /> 导入资料</button>

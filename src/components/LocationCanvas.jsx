@@ -20,64 +20,6 @@ const colorOf = (g) => {
 const COLS = 5, CW = 150, CH = 96;
 const defaultPos = (i) => ({ x: 16 + (i % COLS) * CW, y: 16 + Math.floor(i / COLS) * CH });
 
-// 自包含样式，全部 .loc- 前缀，颜色走主题变量以兼容浅 / 深主题
-const css = `
-.loc-root { font-family: var(--font-ui, inherit); color: var(--ink, #171a19); }
-.loc-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; flex-wrap:wrap; }
-.loc-tabs { display:inline-flex; border:1px solid var(--border, #e3eae5); border-radius:10px; overflow:hidden; background:var(--surface-2, #f4f8f5); }
-.loc-tab { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border:0; background:transparent; color:var(--muted, #717b74); font-size:13px; cursor:pointer; }
-.loc-tab.active { background:var(--primary, #1a4a35); color:#fff; }
-:root[data-theme="dark"] .loc-tab.active { background:var(--primary-dark, #1a4a35); }
-.loc-add { display:inline-flex; align-items:center; gap:6px; padding:7px 13px; border:1px solid var(--border, #e3eae5); border-radius:9px; background:var(--surface, #fff); color:var(--ink, #171a19); font-size:13px; cursor:pointer; }
-.loc-add:hover { border-color:var(--primary, #1a4a35); color:var(--primary, #1a4a35); }
-.loc-derived { display:flex; align-items:flex-start; gap:8px; flex-wrap:wrap; font-size:12px; color:var(--muted, #717b74); margin-bottom:12px; }
-.loc-derived strong { color:var(--ink, #171a19); }
-.loc-derived-list { display:flex; flex-wrap:wrap; gap:6px; }
-.loc-dchip { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:999px; border:1px solid var(--border, #e3eae5); background:var(--surface-2, #f4f8f5); }
-.loc-dchip.reg { color:var(--sage, #4a6d47); }
-.loc-reg-btn { border:0; background:var(--primary, #1a4a35); color:#fff; border-radius:999px; padding:1px 7px; font-size:11px; cursor:pointer; }
-
-/* 画布：点阵网格 + 可横向滚动 */
-.loc-canvas-wrap { overflow:auto; border:1px solid var(--border, #e3eae5); border-radius:12px; background:var(--paper, #fafcf9); }
-.loc-canvas { position:relative; width:820px; background-color:var(--paper, #fafcf9); background-image:radial-gradient(var(--line, rgba(26,74,53,.09)) 1px, transparent 1px); background-size:20px 20px; }
-.loc-node { position:absolute; width:138px; min-height:56px; box-sizing:border-box; padding:8px 9px; border:1px solid var(--border, #e3eae5); border-left:3px solid var(--line, #e3eae5); border-radius:9px; background:var(--white, #fff); box-shadow:var(--shadow, 0 3px 14px rgba(0,0,0,.06)); cursor:grab; user-select:none; }
-.loc-node.dragging { cursor:grabbing; box-shadow:var(--shadow-lg, 0 20px 48px rgba(0,0,0,.13)); z-index:5; }
-.loc-node.open { cursor:default; }
-.loc-node-head { display:flex; align-items:center; gap:4px; }
-.loc-grip { color:var(--muted, #717b74); flex:none; }
-.loc-node-title { font-size:13px; font-weight:600; color:var(--ink, #171a19); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.loc-node-sub { display:flex; justify-content:space-between; gap:6px; font-size:11px; color:var(--muted, #717b74); margin-top:4px; }
-.loc-node-grp { color:var(--primary, #1a4a35); }
-
-/* 卡片内联编辑区 */
-.loc-editor { margin-top:8px; padding-top:8px; border-top:1px dashed var(--border, #e3eae5); display:flex; flex-direction:column; gap:6px; cursor:default; }
-.loc-field { display:flex; flex-direction:column; gap:2px; font-size:11px; color:var(--muted, #717b74); }
-.loc-field input, .loc-field textarea { width:100%; box-sizing:border-box; padding:5px 7px; font-size:12px; border:1px solid var(--border, #e3eae5); border-radius:6px; background:var(--surface-2, #f4f8f5); color:var(--ink, #171a19); font-family:inherit; resize:vertical; }
-.loc-del { display:inline-flex; align-items:center; gap:5px; align-self:flex-start; border:0; background:transparent; color:#c0453b; font-size:11px; cursor:pointer; padding:2px 0; }
-.loc-del:hover { text-decoration:underline; }
-
-/* 分组视图 */
-.loc-group-view { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:14px; }
-.loc-group-panel { border:1px solid var(--border, #e3eae5); border-radius:12px; background:var(--white, #fff); overflow:hidden; }
-.loc-group-head { display:flex; align-items:center; gap:8px; padding:10px 12px; background:var(--surface-2, #f4f8f5); border-bottom:1px solid var(--border, #e3eae5); font-size:13px; color:var(--ink, #171a19); }
-.loc-group-dot { width:10px; height:10px; border-radius:50%; flex:none; }
-.loc-group-count { margin-left:auto; font-size:11px; color:var(--muted, #717b74); background:var(--surface-3, #eaf5ee); border-radius:999px; padding:1px 8px; }
-.loc-group-items { padding:8px; display:flex; flex-direction:column; gap:8px; }
-.loc-group-item { border:1px solid var(--border, #e3eae5); border-radius:9px; padding:8px; background:var(--surface, #fff); }
-.loc-gi-head { display:flex; justify-content:space-between; align-items:center; gap:8px; cursor:pointer; }
-.loc-gi-name { font-size:13px; font-weight:600; color:var(--ink, #171a19); }
-.loc-gi-move { display:flex; gap:6px; margin-top:6px; }
-.loc-gi-move select, .loc-gi-move input { flex:1; min-width:0; font-size:11px; padding:4px 6px; border:1px solid var(--border, #e3eae5); border-radius:6px; background:var(--surface-2, #f4f8f5); color:var(--ink, #171a19); }
-
-/* 关系视图：SVG 共现网络 */
-.loc-graph-wrap { border:1px solid var(--border, #e3eae5); border-radius:12px; overflow:auto; background:var(--paper, #fafcf9); }
-.loc-graph { display:block; width:820px; height:460px; }
-.loc-edge-label { fill:var(--primary, #1a4a35); font-size:11px; text-anchor:middle; paint-order:stroke; stroke:var(--paper, #fafcf9); stroke-width:3px; }
-.loc-node-label { fill:#fff; font-size:12px; font-weight:600; text-anchor:middle; paint-order:stroke; }
-
-/* 空状态 */
-.loc-empty { padding:36px 16px; text-align:center; color:var(--muted, #717b74); border:1px dashed var(--border, #e3eae5); border-radius:12px; font-size:13px; }
-`;
 
 // 内联编辑区：名称 / 分组 / 实拍地点 / 备注 + 删除（改动直接 mutate）
 function LocEditor({ l, groups, onChange, onDelete }) {
@@ -245,7 +187,6 @@ export default function LocationCanvas({ project, mutate, derived }) {
 
   return (
     <div className="loc-root">
-      <style>{css}</style>
 
       {/* 工具栏：视图切换 + 新增地点 */}
       <div className="loc-toolbar">
