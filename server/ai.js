@@ -51,6 +51,9 @@ function buildMessages(body) {
     if (Array.isArray(project.characters) && project.characters.length) parts.push(`【项目角色】${project.characters.join('、')}`);
     if (Array.isArray(project.locations) && project.locations.length) parts.push(`【项目地点】${project.locations.join('、')}`);
     if (Array.isArray(project.props) && project.props.length) parts.push(`【项目道具】${project.props.join('、')}`);
+    if (Array.isArray(project.shotRefs) && project.shotRefs.length) {
+      parts.push(`【分镜参考图 · 视觉约束】\n${project.shotRefs.map(r => `- 镜头${r.shot}${r.scene ? `（${r.scene}）` : ''}：${r.image}${r.note ? ` — ${r.note}` : ''}`).join('\n')}\n这些是用户指定的视觉参考；描述镜头时保持与其一致的构图/色调，不要把图片 URL 写进剧本。`);
+    }
     if (parts.length) projectText = '\n' + parts.join('\n');
   }
   const advisor = ADVISORS.find(a => a.id === advisorId);

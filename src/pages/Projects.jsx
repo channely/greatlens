@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus, FileText, Film, Trash2, CalendarDays, ArrowRight,
-  Upload, X, Loader2, Check,
+  Upload, X, Loader2, Check, BookOpen, FileUp,
 } from 'lucide-react';
 import { api } from '../api.js';
 
@@ -25,6 +25,15 @@ export default function Projects() {
   const [mergeProjectId, setMergeProjectId] = useState('');
   const [importBusy, setImportBusy] = useState(false);
   const [importError, setImportError] = useState('');
+
+  // 创意资料附件导入（DOCX / PDF / MD / TXT）
+  const attachRef = useRef(null);
+  const [attach, setAttach] = useState(null); // { name, text, kind, warning }
+  const [attachBusy, setAttachBusy] = useState(false);
+  const [attachTarget, setAttachTarget] = useState('knowledge'); // knowledge | new
+  const [attachProject, setAttachProject] = useState('');
+  const [attachName, setAttachName] = useState('');
+  const [attachError, setAttachError] = useState('');
 
   const load = () => api.projects.list().then(setProjects).catch(e => setError(e.message));
   useEffect(() => { load(); }, []);
@@ -82,6 +91,57 @@ export default function Projects() {
     finally { setImportBusy(false); }
   }
 
+  async function pickAttachment(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setError(''); setNotice(''); setAttachError(''); setAttachBusy(true);
+    try {
+      const dataBase64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+        reader.onerror = () => reject(new Error('读取文件失败'));
+        reader.readAsDataURL(file);
+      });
+      const r = await api.import.attachment({ name: file.name, mime: file.type, dataBase64 });
+      setAttach({ ...r, name: r.name || file.name });
+      setAttachName(file.name.replace(/\.[^.]+$/, ''));
+      setAttachProject(projects[0]?.id || '');
+      setAttachTarget(projects.length ? 'knowledge' : 'new');
+    } catch (err) { setAttachError(err.message); }
+    finally { setAttachBusy(false); }
+  }
+
+  async function confirmAttachment() {
+    setAttachBusy(true); setAttachError('');
+    try {
+      if (attachTarget === 'knowledge') {
+        if (!attachProject) { setAttachError('请选择要加入知识库的项目。'); return; }
+        const p = await api.projects.get(attachProject);
+        p.knowledge = p.knowledge || [];
+        p.knowledge.push({
+          id: `k_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          name: attachName.trim() || attach.name,
+          type: 'reference',
+          summary: (attach.text || '').slice(0, 120).replace(/\s+/g, ' ').trim(),
+          tags: [attach.kind || '附件'],
+          body: attach.text || '',
+        });
+        await api.projects.save(p.id, p);
+        setNotice(`已将「${attach.name}」加入项目知识库。`);
+        setAttach(null);
+      } else {
+        const p = await api.projects.create('script', attachName.trim() || attach.name);
+        p.knowledge = [{ id: `k_${Date.now()}`, name: attach.name, type: 'reference', summary: (attach.text || '').slice(0, 120).replace(/\s+/g, ' ').trim(), tags: ['附件'], body: attach.text || '' }];
+        await api.projects.save(p.id, p);
+        setAttach(null);
+        load();
+        nav(`/edit/${p.id}`);
+      }
+    } catch (err) { setAttachError(err.message); }
+    finally { setAttachBusy(false); }
+  }
+
   return (
     <main className="container page">
       <div className="page-head">
@@ -90,11 +150,14 @@ export default function Projects() {
           <p className="muted">所有创作都从一个项目开始。数据保存在本地 <code>data/db.json</code>。</p>
         </div>
         <div className="head-actions">
+          <button className="btn btn-ghost" onClick={() => attachRef.current?.click()}><BookOpen size={16} /> 导入资料</button>
           <button className="btn btn-ghost" onClick={() => fileRef.current?.click()}><Upload size={16} /> 导入 FDX / Fountain</button>
           <button className="btn btn-primary" onClick={() => setCreating(v => !v)}><Plus size={16} /> 新建项目</button>
         </div>
       </div>
       <input ref={fileRef} type="file" accept=".fdx,.fountain,.txt" style={{ display: 'none' }} onChange={pickFile} />
+      <input ref={attachRef} type="file" accept=".docx,.pdf,.md,.markdown,.txt" style={{ display: 'none' }} onChange={pickAttachment} />
+      {attachBusy && !attach && <div className="alert success sm"><Loader2 className="spin" size={13} /> 正在解析资料…</div>}
 
       {error && <div className="alert error">{error}</div>}
       {notice && <div className="alert success">{notice}</div>}
@@ -172,6 +235,40 @@ export default function Projects() {
               <button className="btn btn-primary" onClick={doImport} disabled={importBusy}>
                 {importBusy ? <><Loader2 className="spin" size={15} /> 导入中…</> : <><Check size={15} /> 开始导入</>}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {attach && (
+        <div className="dialog-overlay" onMouseDown={e => { if (e.target === e.currentTarget) setAttach(null); }}>
+          <div className="dialog attach-dialog">
+            <div className="dialog-head">
+              <div><h3>资料已解析</h3><p className="muted small">文件：{attach.name} · {attach.kind?.toUpperCase()} · {attach.text?.length || 0} 字</p></div>
+              <button className="icon-btn" onClick={() => setAttach(null)}><X size={18} /></button>
+            </div>
+            <div className="dialog-body form-stack">
+              {attach.warning && <div className="alert warning sm">{attach.warning}</div>}
+              <label>资料名称<input value={attachName} onChange={e => setAttachName(e.target.value)} placeholder="给这份资料起个名字" /></label>
+              <label className="radio-row">
+                <input type="radio" name="attach-mode" checked={attachTarget === 'knowledge'} onChange={() => setAttachTarget('knowledge')} disabled={projects.length === 0} />
+                <span>加入项目知识库（AI 可按需检索）{projects.length === 0 ? '（暂无项目）' : ''}</span>
+              </label>
+              {attachTarget === 'knowledge' && (
+                <select value={attachProject} onChange={e => setAttachProject(e.target.value)}>
+                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              )}
+              <label className="radio-row">
+                <input type="radio" name="attach-mode" checked={attachTarget === 'new'} onChange={() => setAttachTarget('new')} />
+                <span>据此新建项目（资料存入新知识库）</span>
+              </label>
+              <details className="attach-preview"><summary>查看解析出的文本</summary><pre>{(attach.text || '').slice(0, 3000) || '（未提取到文本）'}</pre></details>
+              {attachError && <div className="alert error sm">{attachError}</div>}
+            </div>
+            <div className="dialog-foot">
+              <button className="btn btn-ghost" onClick={() => setAttach(null)}>取消</button>
+              <button className="btn btn-primary" onClick={confirmAttachment} disabled={attachBusy}><FileUp size={15} /> 确认导入</button>
             </div>
           </div>
         </div>

@@ -4,10 +4,12 @@ import {
   Save, Download, Plus, Trash2, Sparkles, Send,
   FileText, ListTree, Users, MapPin, BookOpen, Clapperboard,
   Loader2, Check, Wand2, ArrowUp, ArrowDown, Copy, Network,
-  ClipboardList, Package, X, SlidersHorizontal, CheckSquare,
+  ClipboardList, Package, X, SlidersHorizontal, CheckSquare, ImagePlus,
 } from 'lucide-react';
-import { api } from '../api.js';
+import { api, resolveAssetUrl } from '../api.js';
 import { CastingView, RelationshipsView, LocationsPropsView, KnowledgeView } from './Entities.jsx';
+import Timeline from './Timeline.jsx';
+import Beats from './Beats.jsx';
 
 const FULL_DRAFT_NODE_LIMIT = 800;
 
@@ -25,11 +27,13 @@ const NODE_TYPES = [
 const TABS = [
   { id: 'script', label: '剧本', icon: FileText },
   { id: 'outline', label: '大纲', icon: ListTree },
+  { id: 'beats', label: '节拍', icon: SlidersHorizontal },
   { id: 'scenes', label: '场景', icon: MapPin },
   { id: 'characters', label: '角色档案', icon: Users },
   { id: 'production', label: '生产', icon: ClipboardList },
   { id: 'world', label: '世界观', icon: BookOpen },
   { id: 'shots', label: '分镜', icon: Clapperboard },
+  { id: 'timeline', label: '时间轴', icon: Clapperboard },
 ];
 
 const PROD_TABS = [
@@ -41,6 +45,7 @@ const PROD_TABS = [
 
 const SCOPES = [
   { value: 'cursor', label: '光标处' },
+  { value: 'selection', label: '选中文字（字级）' },
   { value: 'node', label: '选中节点' },
   { value: 'range', label: '选中区间' },
   { value: 'scene', label: '当前场景' },
@@ -93,6 +98,8 @@ export default function Editor() {
   const [messages, setMessages] = useState([]);
   const [streaming, setStreaming] = useState(false);
   const [sel, setSel] = useState({ start: -1, end: -1 });
+  // 字级选区：记录某个节点 textarea 内被选中的字符范围 [start, end)
+  const [charSel, setCharSel] = useState(null); // { nodeIdx, start, end, text }
   const [contextMenu, setContextMenu] = useState(null);
   const [dragIdx, setDragIdx] = useState(null);
   const [advisors, setAdvisors] = useState([]);
@@ -192,6 +199,22 @@ export default function Editor() {
   }
   function selectNode(idx, shift) {
     setSel(prev => shift && prev.start >= 0 ? { start: prev.start, end: idx } : { start: idx, end: idx });
+    // 节点级选区变化时，清除上一处字级选区，避免两个选区歧义。
+    setCharSel(null);
+  }
+
+  // 捕获 textarea 内真正的字符选区（鼠标拖选 / Shift+方向键），仅当有长度时记录。
+  function captureCharSel(idx, el) {
+    if (!el) return;
+    const { selectionStart, selectionEnd, value } = el;
+    if (selectionEnd > selectionStart) {
+      const text = value.slice(selectionStart, selectionEnd);
+      setCharSel(prev => (prev && prev.nodeIdx === idx && prev.start === selectionStart && prev.end === selectionEnd && prev.text === text)
+        ? prev : { nodeIdx: idx, start: selectionStart, end: selectionEnd, text });
+    } else if (charSel && charSel.nodeIdx === idx) {
+      // 同一输入框内把选区收拢为一个光标时，清除字级选区。
+      setCharSel(null);
+    }
   }
   function hireAdvisor(advisorId) {
     const next = advisorId || '';
@@ -210,6 +233,11 @@ export default function Editor() {
   }, [nodes]);
 
   function contextForAI() {
+    // 字级选区：只把被选中的那几个字作为上下文，配合定点替换实现真正的行内改写。
+    if (scope === 'selection' && charSel) {
+      const n = nodes[charSel.nodeIdx];
+      return `【节点 ${charSel.nodeIdx + 1}（${n?.type || '?'}）中被选中的文字】\n${charSel.text}`;
+    }
     if (scope === 'node' && hasSel) return nodeLine(nodes[selLo]);
     if (scope === 'range' && hasSel) return nodes.slice(selLo, selHi + 1).map(nodeLine).join('\n');
     if (scope === 'full') return nodes.slice(0, FULL_DRAFT_NODE_LIMIT).map(nodeLine).join('\n');
@@ -225,6 +253,10 @@ export default function Editor() {
   }
 
   function targetLabel() {
+    if (scope === 'selection' && charSel) {
+      const preview = charSel.text.length > 40 ? charSel.text.slice(0, 40) + '…' : charSel.text;
+      return `第${epIdx + 1}集 / 节点 ${charSel.nodeIdx + 1} 内选中的文字（第 ${charSel.start + 1}–${charSel.end} 字）：${preview}`;
+    }
     if (scope === 'node' && hasSel) return `第${epIdx + 1}集 / 节点 ${selLo + 1}：${nodes[selLo]?.text?.slice(0, 40) || '(空)'}`;
     if (scope === 'range' && hasSel) return `第${epIdx + 1}集 / 节点 ${selLo + 1}–${selHi + 1}`;
     if (scope === 'scene') return `第${epIdx + 1}集 / 当前场景`;
@@ -267,6 +299,11 @@ export default function Editor() {
           characters: (project.characters || []).map(c => c.name).filter(Boolean),
           locations: (project.locations || []).map(l => l.name).filter(Boolean),
           props: (project.props || []).map(p => p.name).filter(Boolean),
+          // 分镜参考图槽位：把每个镜头挂的参考图作为视觉约束交给 AI（图本身不塞给模型，只给描述/URL）
+          shotRefs: (ep?.shots || []).filter(s => s.refImage).map((s, i) => ({
+            shot: i + 1, scene: s.scene, note: s.refImage.note || '',
+            image: s.refImage.name || s.refImage.url || '',
+          })),
         },
       }, {
         signal: controller.signal,
@@ -281,10 +318,22 @@ export default function Editor() {
     } finally { if (abortRef.current === controller) setStreaming(false); }
   }
 
-  // 定点替换：改写模式下若选中了节点/区间，替换该段；否则追加到末尾。
+  // 定点替换：改写模式下若选中了字级文字/节点/区间，原位替换该段；否则追加到末尾。
   function applyAIText(text, replace) {
     const parsed = parseAIText(text);
     if (!parsed.length) return;
+    if (replace && scope === 'selection' && charSel) {
+      // 字级替换：把选中文字换成 AI 输出（多行则合并为空格，保持单节点语义不破裂）。
+      const replacement = parsed.map(p => p.text).join(' ').trim();
+      mutate(e => {
+        const node = e.nodes[charSel.nodeIdx];
+        if (!node) return;
+        node.text = node.text.slice(0, charSel.start) + replacement + node.text.slice(charSel.end);
+      });
+      setCharSel(null);
+      setTab('script');
+      return;
+    }
     if (replace && hasSel && (scope === 'node' || scope === 'range')) {
       mutate(e => { e.nodes.splice(selLo, selHi - selLo + 1, ...parsed); });
       setSel({ start: selLo, end: selLo + parsed.length - 1 });
@@ -318,7 +367,7 @@ export default function Editor() {
   if (error && !project) return <main className="container page"><div className="alert error">{error}</div><Link to="/projects">返回项目</Link></main>;
   if (!project) return <main className="container page"><div className="loading"><Loader2 className="spin" size={20} /> 加载中…</div></main>;
 
-  const canReplace = hasSel && (scope === 'node' || scope === 'range');
+  const canReplace = (scope === 'selection' && !!charSel) || (hasSel && (scope === 'node' || scope === 'range'));
   const currentAdvisor = advisors.find(a => a.id === project.advisorId);
 
   return (
@@ -353,7 +402,10 @@ export default function Editor() {
             {tab === 'script' && (
               <div className="script-view">
                 <div className="script-toolbar">
-                  <span>语义节点 · {nodes.length} 段{hasSel && <em className="sel-hint"> · 已选 {selLo + 1}{selHi !== selLo ? `–${selHi + 1}` : ''}（可定点改写）</em>}</span>
+                  <span>语义节点 · {nodes.length} 段
+                    {charSel && <em className="sel-hint"> · 选中文字「{charSel.text.length > 16 ? charSel.text.slice(0, 16) + '…' : charSel.text}」{scope !== 'selection' && <button className="chip-link" onClick={() => { setScope('selection'); setAiOpen(true); }}>用这段提问 →</button>}</em>}
+                    {!charSel && hasSel && <em className="sel-hint"> · 已选节点 {selLo + 1}{selHi !== selLo ? `–${selHi + 1}` : ''}（可定点改写）</em>}
+                  </span>
                   <div>
                     <button className="btn btn-ghost sm" onClick={() => addNode('scene')}><Plus size={13} /> 场景标题</button>
                     <button className="btn btn-ghost sm" onClick={() => addNode('action')}><Plus size={13} /> 动作</button>
@@ -392,8 +444,11 @@ export default function Editor() {
                         value={n.text}
                         rows={Math.max(1, Math.ceil(n.text.length / (n.type === 'dialogue' ? 34 : 60)))}
                         placeholder={NODE_TYPES.find(t => t.value === n.type)?.hint}
-                        onClick={e => e.stopPropagation()}
-                        onChange={e => updateNode(i, { text: e.target.value })}
+                        onClick={e => { e.stopPropagation(); captureCharSel(i, e.target); }}
+                        onMouseUp={e => captureCharSel(i, e.target)}
+                        onKeyUp={e => captureCharSel(i, e.target)}
+                        onSelect={e => captureCharSel(i, e.target)}
+                        onChange={e => { updateNode(i, { text: e.target.value }); captureCharSel(i, e.target); }}
                         onKeyDown={e => {
                           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addNode(n.type === 'scene' ? 'action' : n.type, i); }
                         }}
@@ -406,6 +461,7 @@ export default function Editor() {
             )}
 
             {tab === 'outline' && <OutlineView ep={ep} mutate={mutate} onAsk={q => { setPrompt(q); setAiOpen(true); }} />}
+            {tab === 'beats' && <Beats ep={ep} mutate={mutate} onAsk={q => { setPrompt(q); setAiOpen(true); }} />}
             {tab === 'scenes' && <ScenesView scenes={derivedSC.scenes} nodes={nodes} />}
             {tab === 'characters' && <CharactersView project={project} mutate={mutate} names={derivedSC.characters} />}
             {tab === 'production' && (
@@ -421,6 +477,7 @@ export default function Editor() {
             )}
             {tab === 'world' && <WorldView project={project} mutate={mutate} />}
             {tab === 'shots' && <ShotsView ep={ep} mutate={mutate} />}
+            {tab === 'timeline' && <Timeline ep={ep} project={project} mutate={mutate} onAsk={q => { setPrompt(q); setAiOpen(true); }} />}
           </div>
         </div>
 
@@ -467,7 +524,7 @@ export default function Editor() {
               {messages.length === 0 && (
                 <div className="chat-hint">
                   <Wand2 size={22} />
-                  <p>先选读取范围，再提问。要定点改写就 Shift 点选节点/区间。</p>
+                  <p>拖动选中一段文字即可字级改写；Shift 点选节点做整段替换。</p>
                   <div className="suggestions">
                     {['诊断这场戏的节奏压力', '把这段改成可拍摄的动作', '给我三个反转选项'].map(s => (
                       <button key={s} onClick={() => setPrompt(s)}>{s}</button>
@@ -647,16 +704,27 @@ function WorldView({ project, mutate }) {
 
 function ShotsView({ ep, mutate }) {
   const shots = ep?.shots || [];
+  const [pickerFor, setPickerFor] = useState(null); // 正在为哪个镜头选参考图（索引）
   return (
     <div className="simple-view">
-      <div className="view-head"><div><h2>分镜</h2><p className="muted">每个镜头都要有工作：它改变什么？观众看到什么？</p></div>
-        <button className="btn btn-primary sm" onClick={() => mutate(e => e.shots.push({ id: `s_${Date.now()}`, scene: '', shotSize: '中景', camera: '固定', motion: '', duration: '3s', visual: '', audio: '' }))}><Plus size={14} /> 添加镜头</button>
+      <div className="view-head"><div><h2>分镜</h2><p className="muted">每个镜头都要有工作：它改变什么？观众看到什么？可为镜头挂参考图作为视觉约束。</p></div>
+        <button className="btn btn-primary sm" onClick={() => mutate(e => e.shots.push({ id: `s_${Date.now()}`, scene: '', shotSize: '中景', camera: '固定', motion: '', duration: '3s', visual: '', audio: '', refImage: null }))}><Plus size={14} /> 添加镜头</button>
       </div>
       {shots.length === 0 ? <div className="empty small">还没有镜头。用 AI 的「分镜」模式从场景生成。</div> : (
         <div className="shot-table-wrap"><table className="shot-table">
-          <thead><tr><th>#</th><th>场景</th><th>景别</th><th>机位</th><th>运动</th><th>时长</th><th>画面</th><th>声音</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>参考图</th><th>场景</th><th>景别</th><th>机位</th><th>运动</th><th>时长</th><th>画面</th><th>声音</th><th></th></tr></thead>
           <tbody>{shots.map((s, i) => <tr key={s.id}>
             <td>{i + 1}</td>
+            <td>
+              <div className="shot-ref-cell">
+                <button className="shot-ref-btn" title="选择参考图" onClick={() => setPickerFor(i)}>
+                  {s.refImage?.url
+                    ? <img src={resolveAssetUrl(s.refImage.url)} alt="参考图" />
+                    : <ImagePlus size={16} />}
+                </button>
+                {s.refImage?.url && <button className="shot-ref-clear" title="移除参考图" onClick={() => mutate(ep2 => { ep2.shots[i].refImage = null; })}>×</button>}
+              </div>
+            </td>
             <td><input value={s.scene} onChange={e => mutate(ep2 => { ep2.shots[i].scene = e.target.value; })} /></td>
             <td><select value={s.shotSize} onChange={e => mutate(ep2 => { ep2.shots[i].shotSize = e.target.value; })}>{['大远景','远景','全景','中景','近景','特写','大特写'].map(x => <option key={x}>{x}</option>)}</select></td>
             <td><input value={s.camera} onChange={e => mutate(ep2 => { ep2.shots[i].camera = e.target.value; })} /></td>
@@ -668,6 +736,55 @@ function ShotsView({ ep, mutate }) {
           </tr>)}</tbody>
         </table></div>
       )}
+      {pickerFor !== null && <RefImagePicker
+        current={shots[pickerFor]?.refImage}
+        onPick={(asset) => {
+          mutate(ep2 => { ep2.shots[pickerFor].refImage = { assetId: asset.id, url: asset.url, name: asset.prompt || asset.model || '参考图', note: '' }; });
+          setPickerFor(null);
+        }}
+        onNote={(note) => mutate(ep2 => { if (ep2.shots[pickerFor].refImage) ep2.shots[pickerFor].refImage.note = note; })}
+        onClose={() => setPickerFor(null)}
+      />}
+    </div>
+  );
+}
+
+// 参考图选择器：从本地素材库挑一张图，可写视觉约束备注，作为镜头的参考图槽位。
+function RefImagePicker({ current, onPick, onNote, onClose }) {
+  const [assets, setAssets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [note, setNote] = useState(current?.note || '');
+  const [selected, setSelected] = useState(current?.assetId || null);
+  useEffect(() => {
+    let alive = true;
+    api.media.assets('image')
+      .then(list => { if (alive) setAssets(Array.isArray(list) ? list : []); })
+      .catch(() => {})
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal ref-picker" onClick={e => e.stopPropagation()}>
+        <div className="modal-head"><h3>选择镜头参考图</h3><button className="icon-btn" onClick={onClose}><X size={16} /></button></div>
+        <div className="ref-picker-body">
+          {loading && <div className="loading"><Loader2 className="spin" size={16} /> 载入素材库…</div>}
+          {!loading && assets.length === 0 && <div className="empty small">素材库还没有图片。先到「素材」页生成或上传图片。</div>}
+          <div className="ref-grid">
+            {assets.map(a => <button key={a.id} className={`ref-tile ${selected === a.id ? 'on' : ''}`} onClick={() => setSelected(a.id)} onDoubleClick={() => onPick(a)}>
+              <img src={resolveAssetUrl(a.url)} alt={a.prompt || '素材'} />
+              {selected === a.id && <span className="ref-check"><Check size={14} /></span>}
+            </button>)}
+          </div>
+          <label className="ref-note">视觉约束备注（会作为 AI 改写该镜头时的参考）
+            <textarea rows={2} value={note} placeholder="例：冷蓝色调、低机位仰拍、画面留白" onChange={e => setNote(e.target.value)} onBlur={() => onNote(note)} />
+          </label>
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-ghost" onClick={onClose}>取消</button>
+          <button className="btn btn-primary" disabled={!selected} onClick={() => onPick(assets.find(a => a.id === selected))}><Check size={14} /> 使用这张</button>
+        </div>
+      </div>
     </div>
   );
 }

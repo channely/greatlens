@@ -1,0 +1,509 @@
+import React, { useMemo, useState } from 'react';
+import {
+  Sparkles, Plus, Trash2, ArrowUp, ArrowDown, Activity,
+  ListOrdered, Lightbulb, Link2, Info, WandSparkles, BarChart3,
+} from 'lucide-react';
+
+// 生成唯一 id，沿用项目里其它页面的写法（时间戳 + 随机串）
+const uid = () => `b_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+// ---------------------------------------------------------------------------
+// Save the Cat（救猫咪）经典 15 节拍模板
+// 中文名 + 英文小字，写进 ep.beats 时英文存到 en 字段，便于列表里显示小字
+// ---------------------------------------------------------------------------
+const TEMPLATE_15 = [
+  { name: '开场画面', en: 'Opening Image', tension: 2 },
+  { name: '铺垫', en: 'Set-Up', tension: 2 },
+  { name: '主题呈现', en: 'Theme Stated', tension: 2 },
+  { name: '催化剂', en: 'Catalyst', tension: 4 },
+  { name: '争执', en: 'Debate', tension: 3 },
+  { name: '第二幕转折', en: 'Break into Two', tension: 4 },
+  { name: 'B 故事', en: 'B Story', tension: 3 },
+  { name: '好玩的部分', en: 'Fun and Games', tension: 3 },
+  { name: '中点转折', en: 'Midpoint', tension: 5 },
+  { name: '坏人逼近', en: 'Bad Guys Close In', tension: 4 },
+  { name: '一切皆失', en: 'All is Lost', tension: 5 },
+  { name: '灵魂黑夜', en: 'Dark Night of the Soul', tension: 4 },
+  { name: '第三幕转折', en: 'Break into Three', tension: 4 },
+  { name: '结局', en: 'Finale', tension: 5 },
+  { name: '终场画面', en: 'Final Image', tension: 2 },
+];
+
+// 节拍强度条：tension 1-5 映射为 5 格
+const TENSION_LEVELS = [1, 2, 3, 4, 5];
+
+// 结构变动后，统一把 order 字段重写为数组下标，保证与外部数据一致
+function renumber(arr) {
+  arr.forEach((b, i) => { b.order = i; });
+}
+
+// ---------------------------------------------------------------------------
+// 样式：全部以 .beat- 前缀隔离，颜色只取主题 CSS 变量，自动兼容浅 / 深主题
+// ---------------------------------------------------------------------------
+const css = `
+.beat-wrap * { box-sizing: border-box; }
+.beat-wrap {
+  padding: 18px 20px 28px;
+  color: var(--ink);
+  font-family: inherit;
+  line-height: 1.5;
+}
+.beat-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.beat-title { display: flex; align-items: center; gap: 9px; }
+.beat-title h2 { margin: 0; font-size: 20px; letter-spacing: .01em; }
+.beat-title .beat-title-icon { color: var(--primary); }
+.beat-sub { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; max-width: 640px; }
+.beat-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.beat-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-radius: 8px; cursor: pointer;
+  font-size: 12.5px; font-family: inherit; white-space: nowrap;
+  border: 1px solid var(--border); background: var(--white); color: var(--ink);
+  transition: background .15s, border-color .15s, opacity .15s;
+}
+.beat-btn:hover { border-color: var(--primary); }
+.beat-btn:disabled { opacity: .5; cursor: not-allowed; }
+.beat-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.beat-btn.primary:hover { opacity: .9; }
+.beat-btn.ghost { background: var(--surface-2); color: var(--primary); border-color: var(--border); }
+.beat-btn.sm { padding: 5px 9px; font-size: 11.5px; }
+.beat-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--white); color: var(--muted);
+  transition: background .15s, color .15s, border-color .15s;
+}
+.beat-icon-btn:hover:not(:disabled) { color: var(--primary); border-color: var(--primary); }
+.beat-icon-btn:disabled { opacity: .35; cursor: not-allowed; }
+.beat-icon-btn.danger:hover { color: #c0392b; border-color: #c0392b; }
+
+.beat-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+.beat-stat {
+  background: var(--white); border: 1px solid var(--border); border-radius: 10px;
+  padding: 11px 14px; box-shadow: var(--shadow); min-width: 0;
+}
+.beat-stat-label { font-size: 11.5px; color: var(--muted); }
+.beat-stat-num {
+  font-size: 22px; font-weight: 600; color: var(--primary); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.beat-stat-num.small { font-size: 15px; }
+
+.beat-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+.beat-card {
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: var(--shadow); padding: 14px;
+}
+.beat-card + .beat-card { margin-top: 16px; }
+.beat-section-title {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 14px; font-weight: 600; margin: 0 0 12px;
+}
+.beat-section-title .beat-stitle-icon { color: var(--primary); }
+.beat-section-title .beat-count {
+  margin-left: auto; font-size: 11px; font-weight: 400; color: var(--muted);
+}
+
+/* 强度曲线 */
+.beat-curve-wrap { margin-bottom: 4px; }
+.beat-curve { width: 100%; height: auto; display: block; }
+.beat-curve-grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 4 4; }
+.beat-curve-label { fill: var(--muted); font-size: 9px; }
+.beat-curve-area { fill: var(--primary); opacity: .10; }
+.beat-curve-line { fill: none; stroke: var(--primary); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.beat-curve-dot { fill: var(--white); stroke: var(--primary); stroke-width: 2.5; cursor: pointer; transition: r .12s; }
+.beat-curve-dot:hover, .beat-curve-dot.active { fill: var(--primary); }
+.beat-curve-xlabel { fill: var(--muted); font-size: 9px; }
+.beat-curve-empty {
+  padding: 22px 12px; text-align: center; color: var(--muted); font-size: 12.5px;
+  background: var(--surface-2); border-radius: 9px; border: 1px dashed var(--border);
+}
+
+/* 节拍列表 */
+.beat-list { display: flex; flex-direction: column; }
+.beat-insert { display: flex; align-items: center; gap: 8px; height: 18px; }
+.beat-insert::before, .beat-insert::after { content: ''; flex: 1; height: 1px; background: var(--border); opacity: 0; transition: opacity .15s; }
+.beat-insert:hover::before, .beat-insert:hover::after { opacity: 1; }
+.beat-insert-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 18px; min-width: 26px; padding: 0 6px; border-radius: 6px; cursor: pointer;
+  border: 1px dashed var(--border); background: var(--white); color: var(--muted);
+  font-size: 11px; opacity: .7; transition: opacity .15s, color .15s, border-color .15s;
+}
+.beat-insert-btn:hover { opacity: 1; color: var(--primary); border-color: var(--primary); }
+
+.beat-row {
+  border: 1px solid var(--border); border-radius: 10px; background: var(--paper);
+  padding: 11px 12px; transition: border-color .15s, box-shadow .15s;
+}
+.beat-row.active { border-color: var(--primary); box-shadow: 0 0 0 2px var(--surface-3); }
+.beat-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.beat-num {
+  flex: 0 0 auto; min-width: 26px; height: 26px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 7px; background: var(--surface-2); color: var(--primary);
+  font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.beat-name {
+  flex: 1 1 180px; min-width: 0; font-size: 13.5px; font-weight: 600; color: var(--ink);
+  border: 1px solid transparent; border-radius: 6px; padding: 4px 6px; background: transparent;
+  font-family: inherit;
+}
+.beat-name:hover { border-color: var(--border); }
+.beat-name:focus { outline: none; border-color: var(--primary); background: var(--white); }
+.beat-name::-webkit-input-placeholder { color: var(--muted); font-weight: 400; }
+.beat-en { flex: 0 0 auto; font-size: 10.5px; color: var(--muted); font-style: italic; }
+.beat-row-tools { display: flex; gap: 4px; flex: 0 0 auto; }
+
+.beat-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; margin-top: 9px; }
+.beat-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.beat-field.full { grid-column: 1 / -1; }
+.beat-field-label { font-size: 10.5px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+.beat-input, .beat-textarea {
+  width: 100%; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--surface-2); color: var(--ink); font-family: inherit; font-size: 12px;
+  padding: 6px 8px; resize: vertical;
+}
+.beat-input:focus, .beat-textarea:focus { outline: none; border-color: var(--primary); }
+.beat-input::placeholder, .beat-textarea::placeholder { color: var(--muted); }
+
+.beat-tension-row { display: flex; align-items: center; gap: 10px; }
+.beat-range { flex: 1; accent-color: var(--primary); height: 18px; cursor: pointer; }
+.beat-tension-num {
+  flex: 0 0 auto; min-width: 40px; text-align: center; font-size: 11px;
+  color: var(--primary); font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.beat-bar { display: flex; gap: 3px; margin-top: 6px; }
+.beat-bar-seg { height: 5px; flex: 1; border-radius: 3px; background: var(--border); }
+.beat-bar-seg.on { background: var(--primary); }
+
+.beat-refine {
+  margin-top: 9px; display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--primary); background: transparent;
+  border: none; padding: 2px 0; cursor: pointer; font-family: inherit;
+}
+.beat-refine:hover { text-decoration: underline; }
+
+/* 侧栏：大纲对照 + 提示 */
+.beat-side-card {
+  background: var(--white); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: var(--shadow); padding: 14px; margin-bottom: 14px;
+}
+.beat-outline-list { display: flex; flex-direction: column; gap: 7px; max-height: 380px; overflow-y: auto; }
+.beat-outline-item {
+  display: flex; gap: 8px; font-size: 12px; color: var(--ink-2);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 7px 9px;
+}
+.beat-outline-num { flex: 0 0 auto; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
+.beat-outline-text { white-space: pre-wrap; word-break: break-word; }
+.beat-hint {
+  display: flex; gap: 8px; font-size: 11.5px; color: var(--muted); line-height: 1.6;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 9px; padding: 10px 11px; margin-top: 12px;
+}
+.beat-hint .beat-hint-icon { flex: 0 0 auto; color: var(--primary); margin-top: 1px; }
+.beat-empty {
+  padding: 30px 16px; text-align: center; color: var(--muted);
+  border: 1px dashed var(--border); border-radius: 11px; background: var(--surface-2);
+}
+.beat-empty-icon { color: var(--primary); margin-bottom: 8px; }
+.beat-empty p { margin: 0 0 14px; font-size: 12.5px; }
+
+@media (max-width: 860px) {
+  .beat-grid { grid-template-columns: 1fr; }
+  .beat-stats { grid-template-columns: 1fr 1fr 1fr; }
+}
+@media (max-width: 520px) {
+  .beat-stats { grid-template-columns: 1fr; }
+  .beat-fields { grid-template-columns: 1fr; }
+}
+`;
+
+// ---------------------------------------------------------------------------
+// 主组件
+// ---------------------------------------------------------------------------
+export default function Beats({ ep, mutate, onAsk }) {
+  // beats 可能为空；用 useMemo 只为统计数据缓存，避免每次渲染重复计算
+  const beats = ep?.beats || [];
+  const outline = ep?.outline || [];
+  const [activeId, setActiveId] = useState(null);
+
+  const stats = useMemo(() => {
+    const count = beats.length;
+    if (!count) return { count: 0, avg: '—', top: '—' };
+    const tensions = beats.map(b => Number(b.tension) || 1);
+    const avg = (tensions.reduce((a, b) => a + b, 0) / count).toFixed(1);
+    let topIdx = 0;
+    tensions.forEach((t, i) => { if (t > tensions[topIdx]) topIdx = i; });
+    const rawName = String(beats[topIdx].name || '').trim();
+    const top = rawName || `第 ${topIdx + 1} 拍`;
+    return { count, avg, top };
+  }, [beats]);
+
+  // ---- 结构操作：全部走 mutate，由父级负责克隆与自动保存 ----
+
+  // 载入模板：若已有节拍，先 confirm 确认覆盖
+  function loadTemplate() {
+    if (beats.length && !window.confirm(`已有 ${beats.length} 个节拍，载入模板将覆盖它们。确定继续吗？`)) return;
+    mutate(e => {
+      // 每一拍都按规格写入 {id, name, summary, scene, tension, order}，en 仅用于英文小字显示
+      e.beats = TEMPLATE_15.map((t, i) => ({
+        id: uid(),
+        name: t.name,
+        en: t.en,
+        summary: '',
+        scene: '',
+        tension: t.tension,
+        order: i,
+      }));
+    });
+    setActiveId(null);
+  }
+
+  // 修改单拍的某个字段
+  function updateBeat(index, patch) {
+    mutate(e => { Object.assign(e.beats[index], patch); });
+  }
+
+  // 上移 / 下移：交换位置后重排 order
+  function moveBeat(index, delta) {
+    mutate(e => {
+      const arr = e.beats;
+      const j = index + delta;
+      if (j < 0 || j >= arr.length) return;
+      const [moved] = arr.splice(index, 1);
+      arr.splice(j, 0, moved);
+      renumber(arr);
+    });
+  }
+
+  // 删除一拍
+  function removeBeat(index) {
+    mutate(e => { e.beats.splice(index, 1); renumber(e.beats); });
+  }
+
+  // 在指定位置插入自定义空节拍
+  function insertBeat(index) {
+    const id = uid();
+    mutate(e => {
+      e.beats.splice(index, 0, {
+        id, name: '', en: '', summary: '', scene: '', tension: 3, order: index,
+      });
+      renumber(e.beats);
+    });
+    setActiveId(id);
+  }
+
+  // 点击曲线节点：高亮并滚动到对应节拍
+  function focusBeat(id) {
+    setActiveId(id);
+    const el = document.getElementById(`beat-${id}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  // ---- AI 协作 ----
+  const askForSuggestions = () => onAsk(
+    '基于当前大纲和剧本，给出分集节拍建议：标出每一拍的戏剧功能、催化剂与转折，先只给建议不要改剧本'
+  );
+  const askForDetail = (name) => onAsk(
+    `请细化节拍「${name}」：给出可见行为、冲突和这一拍结束时的状态变化，不要改剧本`
+  );
+
+  return (
+    <div className="beat-wrap">
+      <style>{css}</style>
+
+      {/* 顶部标题与操作 */}
+      <div className="beat-head">
+        <div>
+          <div className="beat-title">
+            <Activity size={19} className="beat-title-icon" />
+            <h2>节拍板 Beats</h2>
+          </div>
+          <p className="beat-sub">用「救猫咪」15 节拍检查一集戏的起伏：每一拍都应有可见行为与状态变化，强度曲线帮你一眼看出节奏是否平淡。</p>
+        </div>
+        <div className="beat-actions">
+          <button className="beat-btn ghost sm" onClick={loadTemplate}><ListOrdered size={13} /> 载入 15 节拍模板</button>
+          <button className="beat-btn primary sm" onClick={askForSuggestions}><Sparkles size={13} /> 让 AI 生成节拍建议</button>
+        </div>
+      </div>
+
+      {/* 统计 */}
+      <div className="beat-stats">
+        <div className="beat-stat"><div className="beat-stat-label">节拍数</div><div className="beat-stat-num">{stats.count}</div></div>
+        <div className="beat-stat"><div className="beat-stat-label">平均强度</div><div className="beat-stat-num">{stats.avg}<span style={{ fontSize: 12, color: 'var(--muted)' }}> / 5</span></div></div>
+        <div className="beat-stat"><div className="beat-stat-label">最高强度节拍</div><div className="beat-stat-num small" title={stats.top}>{stats.top}</div></div>
+      </div>
+
+      <div className="beat-grid">
+        {/* 左栏：曲线 + 列表 */}
+        <div>
+          <div className="beat-card">
+            <h3 className="beat-section-title"><BarChart3 size={15} className="beat-stitle-icon" /> 强度曲线<span className="beat-count">纵轴 1–5 · 点击节点定位节拍</span></h3>
+            {beats.length ? <StrengthCurve beats={beats} activeId={activeId} onPick={focusBeat} /> : (
+              <div className="beat-curve-empty">载入模板或添加节拍后，这里会显示节奏起伏曲线。</div>
+            )}
+          </div>
+
+          <div className="beat-card">
+            <h3 className="beat-section-title"><ListOrdered size={15} className="beat-stitle-icon" /> 节拍列表<span className="beat-count">{beats.length} 拍</span></h3>
+            {beats.length === 0 ? (
+              <div className="beat-empty">
+                <div className="beat-empty-icon"><ListOrdered size={26} /></div>
+                <p>还没有节拍。先载入 15 节拍模板，或手动添加第一拍。</p>
+                <div className="beat-actions" style={{ justifyContent: 'center' }}>
+                  <button className="beat-btn primary sm" onClick={loadTemplate}><ListOrdered size={13} /> 载入 15 节拍模板</button>
+                  <button className="beat-btn sm" onClick={() => insertBeat(0)}><Plus size={13} /> 新增节拍</button>
+                </div>
+              </div>
+            ) : (
+              <div className="beat-list">
+                {beats.map((b, i) => (
+                  <React.Fragment key={b.id}>
+                    {/* 每一拍前都有一个插入点，支持在任意位置插入 */}
+                    <div className="beat-insert">
+                      <button className="beat-insert-btn" title="在此插入节拍" onClick={() => insertBeat(i)}><Plus size={11} /></button>
+                    </div>
+                    <div id={`beat-${b.id}`} className={`beat-row${activeId === b.id ? ' active' : ''}`}>
+                      <div className="beat-row-head">
+                        <span className="beat-num">{String(i + 1).padStart(2, '0')}</span>
+                        <input
+                          className="beat-name"
+                          value={b.name || ''}
+                          placeholder={`第 ${i + 1} 拍名称`}
+                          onChange={e => updateBeat(i, { name: e.target.value })}
+                        />
+                        {b.en && <span className="beat-en">{b.en}</span>}
+                        <div className="beat-row-tools">
+                          <button className="beat-icon-btn" title="上移" disabled={i === 0} onClick={() => moveBeat(i, -1)}><ArrowUp size={13} /></button>
+                          <button className="beat-icon-btn" title="下移" disabled={i === beats.length - 1} onClick={() => moveBeat(i, 1)}><ArrowDown size={13} /></button>
+                          <button className="beat-icon-btn danger" title="删除" onClick={() => removeBeat(i)}><Trash2 size={13} /></button>
+                        </div>
+                      </div>
+
+                      <div className="beat-fields">
+                        <label className="beat-field full">
+                          <span className="beat-field-label">这一拍发生了什么（summary）</span>
+                          <textarea className="beat-textarea" rows={2} value={b.summary || ''} placeholder="用一句话写清可见的行为与结果" onChange={e => updateBeat(i, { summary: e.target.value })} />
+                        </label>
+                        <label className="beat-field">
+                          <span className="beat-field-label"><Link2 size={11} /> 关联场次（scene）</span>
+                          <input className="beat-input" value={b.scene || ''} placeholder="场次标题，如 INT. 公寓 - 夜" onChange={e => updateBeat(i, { scene: e.target.value })} />
+                        </label>
+                        <div className="beat-field">
+                          <span className="beat-field-label">戏剧强度（tension）</span>
+                          <div className="beat-tension-row">
+                            <input
+                              className="beat-range" type="range" min={1} max={5} step={1}
+                              value={Number(b.tension) || 1}
+                              onChange={e => updateBeat(i, { tension: Number(e.target.value) })}
+                            />
+                            <span className="beat-tension-num">{Number(b.tension) || 1} / 5</span>
+                          </div>
+                          <div className="beat-bar" title={`强度 ${Number(b.tension) || 1} / 5`}>
+                            {TENSION_LEVELS.map(lv => <span key={lv} className={`beat-bar-seg${lv <= (Number(b.tension) || 1) ? ' on' : ''}`} />)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button className="beat-refine" onClick={() => askForDetail(String(b.name || '').trim() || `第 ${i + 1} 拍`)}>
+                        <WandSparkles size={12} /> 让 AI 细化这一拍
+                      </button>
+                    </div>
+                  </React.Fragment>
+                ))}
+                {/* 末尾插入点 */}
+                <div className="beat-insert">
+                  <button className="beat-insert-btn" title="在末尾新增节拍" onClick={() => insertBeat(beats.length)}><Plus size={11} /></button>
+                </div>
+                <button className="beat-btn ghost sm" style={{ alignSelf: 'flex-start', marginTop: 4 }} onClick={() => insertBeat(beats.length)}><Plus size={13} /> 新增节拍</button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 右栏：大纲对照 + 提示 */}
+        <div>
+          <div className="beat-side-card">
+            <h3 className="beat-section-title"><Link2 size={15} className="beat-stitle-icon" /> 大纲对照<span className="beat-count">只读 · {outline.length} 条</span></h3>
+            {outline.length === 0 ? (
+              <div className="beat-curve-empty">大纲还是空的。先到「大纲」tab 写几条，再回来对齐节拍的因果关系。</div>
+            ) : (
+              <div className="beat-outline-list">
+                {outline.map((o, i) => {
+                  const text = typeof o === 'string' ? o : (o?.text || '');
+                  return (
+                    <div className="beat-outline-item" key={o?.id ?? i}>
+                      <span className="beat-outline-num">{String(i + 1).padStart(2, '0')}</span>
+                      <span className="beat-outline-text">{text || '（空条目）'}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="beat-hint"><Info size={13} className="beat-hint-icon" /><span>节拍应与大纲因果一致：催化剂引发争执，midpoint 翻转局势，灵魂黑夜后才有第三幕转折。若发现曲线过于平直，多半是某一拍缺少状态变化。</span></div>
+          </div>
+
+          <div className="beat-side-card">
+            <h3 className="beat-section-title"><Lightbulb size={15} className="beat-stitle-icon" /> 使用提示</h3>
+            <div className="beat-hint" style={{ marginTop: 0 }}><Sparkles size={13} className="beat-hint-icon" /><span>顶部按钮可让 AI 基于大纲与剧本给出节拍建议；每一拍右侧的「让 AI 细化这一拍」会打开 AI 面板并填入针对该拍的问题，均不会直接改动剧本。</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 强度曲线：按 tension 画折线 + 面积，节点可点击定位到对应节拍
+// ---------------------------------------------------------------------------
+function StrengthCurve({ beats, activeId, onPick }) {
+  const W = 620, H = 150;
+  const padL = 32, padR = 14, padT = 12, padB = 26;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const n = beats.length;
+  const x = i => (n === 1 ? padL + plotW / 2 : padL + (i * plotW) / (n - 1));
+  const y = t => padT + plotH - ((Math.min(5, Math.max(1, Number(t) || 1)) - 1) / 4) * plotH;
+
+  const points = beats.map((b, i) => ({ x: x(i), y: y(b.tension), b, i }));
+  const polyline = points.map(p => `${p.x},${p.y}`).join(' ');
+  const areaPath = points.length
+    ? `M ${points[0].x} ${padT + plotH} L ${points.map(p => `${p.x} ${p.y}`).join(' L ')} L ${points[points.length - 1].x} ${padT + plotH} Z`
+    : '';
+
+  return (
+    <div className="beat-curve-wrap">
+      <svg viewBox={`0 0 ${W} ${H}`} className="beat-curve" role="img" aria-label="节拍强度曲线">
+        {/* 纵轴 1-5 网格与刻度 */}
+        {TENSION_LEVELS.map(lv => (
+          <g key={lv}>
+            <line className="beat-curve-grid" x1={padL} y1={y(lv)} x2={W - padR} y2={y(lv)} />
+            <text className="beat-curve-label" x={padL - 8} y={y(lv) + 3} textAnchor="end">{lv}</text>
+          </g>
+        ))}
+        {/* 面积与折线 */}
+        {areaPath && <path className="beat-curve-area" d={areaPath} />}
+        {polyline && <polyline className="beat-curve-line" points={polyline} />}
+        {/* 节点与横轴序号 */}
+        {points.map(p => (
+          <g key={p.b.id}>
+            <circle
+              className={`beat-curve-dot${activeId === p.b.id ? ' active' : ''}`}
+              cx={p.x} cy={p.y} r={5}
+              onClick={() => onPick(p.b.id)}
+            >
+              <title>{`${String(p.b.name || '').trim() || `第 ${p.i + 1} 拍`} · 强度 ${Number(p.b.tension) || 1}/5`}</title>
+            </circle>
+            <text className="beat-curve-xlabel" x={p.x} y={H - 8} textAnchor="middle">{p.i + 1}</text>
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}

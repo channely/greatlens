@@ -12,6 +12,7 @@ import {
 } from './media.js';
 import { syncStatus, configureSync, pushSync, pullSync } from './sync.js';
 import { exportRender } from './export.js';
+import { parseAttachment, supportedExtensions } from './attachments.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -167,6 +168,25 @@ app.post('/api/import/fdx', wrap(async (req, res) => {
     db.update(d => { d.projects.unshift(project); });
   }
   res.json({ project, stats: parsed.stats });
+}));
+
+// ---------- 创意资料附件导入（DOCX / PDF / MD / TXT → 纯文本） ----------
+app.get('/api/import/support', (_req, res) => res.json({ extensions: supportedExtensions() }));
+app.post('/api/import/attachment', wrap(async (req, res) => {
+  const { name, dataBase64, mime } = req.body || {};
+  if (!name || !dataBase64) return res.status(400).json({ error: '缺少文件名或内容' });
+  if (typeof dataBase64 !== 'string' || dataBase64.length > 24 * 1024 * 1024) {
+    return res.status(413).json({ error: '文件过大（上限约 18MB）' });
+  }
+  let buffer;
+  try { buffer = Buffer.from(dataBase64, 'base64'); }
+  catch { return res.status(400).json({ error: '文件内容无法解码' }); }
+  try {
+    const parsed = parseAttachment(buffer, name, mime);
+    res.json({ name, size: buffer.length, ...parsed });
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message || '解析失败' });
+  }
 }));
 
 // ---------- media generation ----------

@@ -4,6 +4,7 @@ import {
   AlertTriangle, RefreshCw, Users, Clapperboard, FileText, Loader2,
 } from 'lucide-react';
 import { api } from '../api.js';
+import LocationCanvas from '../components/LocationCanvas.jsx';
 
 const uid = () => `e_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -136,6 +137,7 @@ export function RelationshipsView({ project, mutate }) {
 // ---------------------------------------------------------------------------
 export function LocationsPropsView({ project, mutate, derived }) {
   const [audit, setAudit] = useState(null);
+  const [locView, setLocView] = useState('table'); // table | canvas
   const locations = project.locations || [];
   const props = project.props || [];
   const derivedLocs = derived?.locations || [];
@@ -149,10 +151,13 @@ export function LocationsPropsView({ project, mutate, derived }) {
 
       <div className="section-block">
         <div className="section-head"><h3><MapPin size={15} /> 地点 / 勘景</h3>
-          <button className="btn btn-ghost sm" onClick={() => mutate((_, p) => p.locations.push({ id: uid(), name: '', shooting: '', access: '', time: '', weather: '', light: '', sound: '', notes: '' }))}><Plus size={13} /> 添加地点</button>
+          <div className="loc-view-switch">
+            <button className={locView === 'table' ? 'active' : ''} onClick={() => setLocView('table')}>表格</button>
+            <button className={locView === 'canvas' ? 'active' : ''} onClick={() => setLocView('canvas')}>画布 / 分组</button>
+          </div>
         </div>
         {derivedLocs.length > 0 && <div className="derived-hint"><span>剧本派生：</span>{derivedLocs.map((l, i) => <span className="tag mini" key={i}>{l.name}（{l.scenes.length} 场）</span>)}</div>}
-        <div className="table-wrap"><table className="data-table">
+        {locView === 'canvas' ? <LocationCanvas project={project} mutate={mutate} derived={derived} /> : <div className="table-wrap"><table className="data-table">
           <thead><tr><th>故事地点</th><th>实拍地点 / 棚</th><th>可达性</th><th>时间</th><th>天气</th><th>光线</th><th>声音</th><th>备注</th><th></th></tr></thead>
           <tbody>{locations.map((l, i) => <tr key={l.id}>
             <td><input value={l.name} placeholder="地点名" onChange={e => mutate((_, p) => { p.locations[i].name = e.target.value; })} /></td>
@@ -165,7 +170,7 @@ export function LocationsPropsView({ project, mutate, derived }) {
             <td><textarea rows={1} value={l.notes || ''} onChange={e => mutate((_, p) => { p.locations[i].notes = e.target.value; })} /></td>
             <td><button className="icon-btn danger" onClick={() => mutate((_, p) => p.locations.splice(i, 1))}><Trash2 size={13} /></button></td>
           </tr>)}</tbody>
-        </table></div>
+        </table></div>}
       </div>
 
       <div className="section-block">

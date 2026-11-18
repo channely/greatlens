@@ -148,6 +148,8 @@ export const api = {
 
   import: {
     fdx: (payload) => req('/import/fdx', jsonBody(payload)),
+    support: () => req('/import/support'),
+    attachment: (payload) => req('/import/attachment', jsonBody(payload)),
   },
 
   sync: {
