@@ -3,9 +3,10 @@ import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import {
   Clapperboard, Home as HomeIcon, FolderOpen, Settings as SettingsIcon,
   BarChart3, Images, FolderSync as CloudSync, Play, Github, BookOpen,
-  MessageCircle, CircleHelp,
+  MessageCircle, CircleHelp, Sun, Moon,
 } from 'lucide-react';
 import { currentBackendBase } from './api.js';
+import { useTheme } from './theme.js';
 import Home from './pages/Home.jsx';
 import Projects from './pages/Projects.jsx';
 import Editor from './pages/Editor.jsx';
@@ -33,6 +34,7 @@ function backendLabel() {
 function Shell() {
   const { pathname } = useLocation();
   const source = backendLabel();
+  const { theme, toggleTheme } = useTheme();
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -56,8 +58,9 @@ function Shell() {
           </div>
           <div className="side-backend" title={currentBackendBase()}><span className="status-dot" /> 后端：{source}</div>
           <div className="side-lang">
-            <button className="active">中</button>
-            <button title="English（界面暂为中文）">EN</button>
+            <button className="icon-btn theme-toggle" onClick={toggleTheme} title={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}>
+              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
           </div>
           <Link to="/projects" className="btn btn-primary full side-login">Login</Link>
           <div className="side-icons">

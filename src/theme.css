@@ -1,0 +1,304 @@
+/* GreatLens 主题层：浅 / 深设计令牌 + 暗色硬编码白底覆盖
+   本文件不改动 styles.css，需在 styles.css 之后引入（import 顺序即覆盖顺序）。 */
+
+/* ---------- 设计令牌：浅色 ---------- */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --primary: #1a4a35;
+  --primary-dark: #123827;
+  --primary-bright: #22c55e;
+  --accent: #00c758;
+  --sage: #4a6d47;
+  --ink: #171a19;
+  --ink-2: #27272a;
+  --ink-3: #3f3f46;
+  --paper: #fafcf9;
+  --white: #ffffff;
+  --border: #e3eae5;
+  --muted: #717b74;
+  --shadow: 0 3px 14px rgba(26, 74, 53, .06), 0 1px 3px rgba(0, 0, 0, .03);
+  --shadow-lg: 0 20px 48px rgba(26, 74, 53, .13);
+  --radius: 12px;
+  --font-ui: 'Montserrat', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: Georgia, 'Songti SC', 'Noto Serif SC', 'Times New Roman', serif;
+  --font-script: 'Courier New', Courier, 'Noto Serif SC', 'Songti SC', serif;
+
+  /* 派生表面令牌：暗色下由下层重新定义 */
+  --surface: #ffffff;
+  --surface-2: #f4f8f5;
+  --surface-3: #eaf5ee;
+  --line: var(--border);
+  --grid-line: rgba(26, 74, 53, .028);
+  --overlay: rgba(18, 30, 23, .42);
+}
+
+/* ---------- 设计令牌：深色（深松绿 / 近黑，保持森林绿主色） ---------- */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --primary: #43c47a;        /* 提亮的森林绿，保证暗背景上的文字对比度 */
+  --primary-dark: #1a4a35;   /* 实心按钮仍用深森林绿 */
+  --primary-bright: #6ee7a0;
+  --accent: #22c55e;
+  --sage: #7fae7a;
+  --ink: #e8efe9;
+  --ink-2: #c2d0c6;
+  --ink-3: #9aab9f;
+  --paper: #0e1512;
+  --white: #16211c;          /* 卡片表面：原 styles.css 中 background: var(--white) 自动跟随 */
+  --border: #2b3d33;
+  --muted: #93a398;
+  --shadow: 0 3px 14px rgba(0, 0, 0, .28), 0 1px 3px rgba(0, 0, 0, .2);
+  --shadow-lg: 0 20px 48px rgba(0, 0, 0, .45);
+
+  --surface: #16211c;
+  --surface-2: #1c2a23;
+  --surface-3: #22362b;
+  --line: #2b3d33;
+  --grid-line: rgba(120, 200, 150, .03);
+  --overlay: rgba(0, 0, 0, .6);
+}
+
+/* ---------- 原生控件跟随主题 ---------- */
+html[data-theme="light"] { color-scheme: light; }
+html[data-theme="dark"] { color-scheme: dark; }
+
+/* ---------- 主题切换平滑过渡 ---------- */
+body,
+.sidebar,
+.ws-top,
+.card {
+  transition: background-color .2s, color .2s;
+}
+
+/* ---------- 暗色：页面底色与网格 ---------- */
+:root[data-theme="dark"] body {
+  color: var(--ink);
+  background-color: var(--paper);
+  background-image:
+    repeating-linear-gradient(0deg, transparent 0 27px, var(--grid-line) 28px),
+    repeating-linear-gradient(90deg, transparent 0 27px, var(--grid-line) 28px);
+}
+
+/* ---------- 暗色：硬编码白底 → 深色卡片 ---------- */
+:root[data-theme="dark"] .ws-top,
+:root[data-theme="dark"] .ws-tabs,
+:root[data-theme="dark"] .sidebar,
+:root[data-theme="dark"] .card,
+:root[data-theme="dark"] .char-card,
+:root[data-theme="dark"] .kv-row,
+:root[data-theme="dark"] .ai-panel,
+:root[data-theme="dark"] .mini-card,
+:root[data-theme="dark"] .modal,
+:root[data-theme="dark"] .dialog,
+:root[data-theme="dark"] .simple-view .empty,
+:root[data-theme="dark"] .empty,
+:root[data-theme="dark"] .prompt-card,
+:root[data-theme="dark"] .prompt-chip,
+:root[data-theme="dark"] .home-shortcuts a,
+:root[data-theme="dark"] .home-feature-card,
+:root[data-theme="dark"] .home-note-card,
+:root[data-theme="dark"] .feature-card,
+:root[data-theme="dark"] .section-alt,
+:root[data-theme="dark"] .type-option,
+:root[data-theme="dark"] .project-card,
+:root[data-theme="dark"] .stat-card,
+:root[data-theme="dark"] .task-card,
+:root[data-theme="dark"] .asset-card,
+:root[data-theme="dark"] .mode-card,
+:root[data-theme="dark"] .outline-item,
+:root[data-theme="dark"] .scene-card,
+:root[data-theme="dark"] .shot-table-wrap,
+:root[data-theme="dark"] .cinema-shot,
+:root[data-theme="dark"] .script-toolbar,
+:root[data-theme="dark"] .script-paper,
+:root[data-theme="dark"] .stage-nav,
+:root[data-theme="dark"] .cinema-bar,
+:root[data-theme="dark"] .task-placeholder,
+:root[data-theme="dark"] .side-lang button,
+:root[data-theme="dark"] .reel-tabs button,
+:root[data-theme="dark"] .suggestions button {
+  background-color: var(--white);
+  color: var(--ink);
+  border-color: var(--border);
+}
+
+/* ---------- 暗色：表单控件 ---------- */
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] .form-stack input,
+:root[data-theme="dark"] .form-stack textarea,
+:root[data-theme="dark"] .form-stack select {
+  background-color: var(--surface-2);
+  color: var(--ink);
+  border-color: var(--border);
+}
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder {
+  color: var(--muted);
+}
+:root[data-theme="dark"] input:focus,
+:root[data-theme="dark"] textarea:focus,
+:root[data-theme="dark"] select:focus {
+  border-color: var(--sage);
+}
+
+/* 剧本编辑器原本就是透明底，恢复透明以免被上面的通用规则覆盖 */
+:root[data-theme="dark"] .node-input,
+:root[data-theme="dark"] .outline-item textarea,
+:root[data-theme="dark"] .idea-box textarea,
+:root[data-theme="dark"] .shot-table input,
+:root[data-theme="dark"] .shot-table select,
+:root[data-theme="dark"] .shot-table textarea {
+  background-color: transparent;
+}
+:root[data-theme="dark"] .node-input:focus {
+  background: var(--surface-2);
+  outline-color: var(--border);
+}
+:root[data-theme="dark"] .node-input.parenthetical,
+:root[data-theme="dark"] .paper-line.paren {
+  color: var(--muted);
+}
+:root[data-theme="dark"] .node-input.subtitle {
+  color: var(--ink-2);
+}
+:root[data-theme="dark"] .node-input.comment {
+  color: #e0b25c;
+}
+:root[data-theme="dark"] .node-gutter button {
+  color: var(--muted);
+}
+
+/* ---------- 暗色：节点行悬停 / 评论行（暖深） ---------- */
+:root[data-theme="dark"] .node-row:hover {
+  background: #1b2821;
+}
+:root[data-theme="dark"] .node-row.is-comment {
+  background: #2a2417;
+}
+
+/* ---------- 暗色：幽灵按钮与浅绿点缀块 ---------- */
+:root[data-theme="dark"] .btn-ghost {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--ink-2);
+}
+:root[data-theme="dark"] .side-nav a:hover,
+:root[data-theme="dark"] .side-nav a.active,
+:root[data-theme="dark"] .badge,
+:root[data-theme="dark"] .tag,
+:root[data-theme="dark"] .pill,
+:root[data-theme="dark"] .empty-icon,
+:root[data-theme="dark"] .feature-icon,
+:root[data-theme="dark"] .home-feature-icon,
+:root[data-theme="dark"] .btn-ghost.active,
+:root[data-theme="dark"] .episode-select button.active,
+:root[data-theme="dark"] .mode-badge,
+:root[data-theme="dark"] .sync-badge.ok,
+:root[data-theme="dark"] .type-option.selected,
+:root[data-theme="dark"] .derived-hint,
+:root[data-theme="dark"] .reasoning-box {
+  background-color: var(--surface-3);
+  border-color: var(--border);
+  color: var(--primary);
+}
+
+/* ---------- 暗色：实心主色按钮保持白字与足够对比度 ---------- */
+:root[data-theme="dark"] .btn-primary,
+:root[data-theme="dark"] .side-brand-mark,
+:root[data-theme="dark"] .side-lang button.active,
+:root[data-theme="dark"] .reel-tabs button.active,
+:root[data-theme="dark"] .pipeline,
+:root[data-theme="dark"] .ratio-in {
+  background-color: var(--primary-dark);
+  border-color: var(--primary-dark);
+  color: #fff;
+}
+:root[data-theme="dark"] .btn-primary:hover {
+  background-color: #256b49;
+}
+:root[data-theme="dark"] .side-video .play {
+  background: var(--surface-2);
+  color: var(--primary);
+}
+
+/* ---------- 暗色：表格 ---------- */
+:root[data-theme="dark"] .data-table th,
+:root[data-theme="dark"] .shot-table th {
+  background: var(--surface-2);
+  color: var(--muted);
+  border-bottom-color: var(--border);
+}
+:root[data-theme="dark"] .data-table td {
+  border-bottom-color: var(--border);
+}
+:root[data-theme="dark"] .data-table tr:hover td {
+  background: var(--surface-2);
+}
+
+/* ---------- 暗色：AI 面板消息气泡 ---------- */
+:root[data-theme="dark"] .chat-msg.user {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+:root[data-theme="dark"] .chat-msg.assistant {
+  background: var(--surface-2);
+}
+:root[data-theme="dark"] .chat-msg.error,
+:root[data-theme="dark"] .alert.error,
+:root[data-theme="dark"] .danger-outline:hover,
+:root[data-theme="dark"] .icon-btn.danger:hover {
+  background: #3a1f1f;
+  border-color: #6b3636;
+  color: #ffb4ab;
+}
+:root[data-theme="dark"] .alert.success {
+  background: #153526;
+  border-color: #2b5c3f;
+  color: #9ae6b4;
+}
+:root[data-theme="dark"] .alert.warning {
+  background: #3a2e17;
+  border-color: #6b5426;
+  color: #f3d27a;
+}
+
+/* ---------- 暗色：弹窗、代码与杂项 ---------- */
+:root[data-theme="dark"] .dialog-overlay {
+  background: var(--overlay);
+}
+:root[data-theme="dark"] .dialog-foot {
+  background: var(--surface-2);
+  border-top-color: var(--border);
+}
+:root[data-theme="dark"] code {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+:root[data-theme="dark"] .hero-eyebrow {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--primary);
+}
+:root[data-theme="dark"] .hero-lead,
+:root[data-theme="dark"] .muted {
+  color: var(--muted);
+}
+:root[data-theme="dark"] .icon-btn:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+:root[data-theme="dark"] .ratio-track,
+:root[data-theme="dark"] .asset-thumb,
+:root[data-theme="dark"] .task-result img,
+:root[data-theme="dark"] .task-result video,
+:root[data-theme="dark"] .mode-current,
+:root[data-theme="dark"] .sync-badge {
+  background: var(--surface-2);
+}
+
+/* 响应式断点内的尺寸规则全部保留，此处只覆盖颜色，不触碰布局 */

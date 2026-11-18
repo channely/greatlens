@@ -66,6 +66,33 @@ ensure();
 
 export const uid = () => crypto.randomUUID();
 
+// 官方顾问是世界观/方法论 lens，不是账号成员：每个项目同时只雇用一位（与 laper.ai 一致）。
+export const ADVISORS = [
+  { id: 'script-doctor', name: '剧本医生', en: 'Script Doctor', method: '先定位根问题（结构/人物/场次功能/主题/节奏/对白），再给出按优先级排列的可执行处方，保护作者意图。' },
+  { id: 'structure', name: '结构顾问', en: 'Structure Advisor', method: '以因果链与反转阶梯审视大纲与节拍：检查铺垫—升级—兑现，指出缺失的转折点。' },
+  { id: 'dialogue', name: '对白顾问', en: 'Dialogue Advisor', method: '逐句检验潜台词、角色声音区分度与解释性台词，给出更小的替换方案。' },
+  { id: 'producer', name: '制片可行性顾问', en: 'Production Advisor', method: '从可拍摄性、地点/道具连续性、时长与预算角度审查，指出不可实现的描写。' },
+  { id: 'short-drama', name: '短剧节奏顾问', en: 'Short-form Advisor', method: '以前 3 秒钩子、每场反转、结尾悬念与竖屏可视性为准绳诊断短剧节奏。' },
+  { id: 'visual', name: '视听语言顾问', en: 'Visual Storytelling Advisor', method: '把抽象文字转成可见/可听的镜头行为，检查画面是否承担叙事功能。' },
+];
+
+// 知识库条目索引：只把索引灌进 AI 上下文，正文按需读取（laper.ai 的 index → search → read 模式）。
+export function knowledgeIndex(items = []) {
+  return (items || []).map(({ id, name, type, summary, tags, body }) => ({
+    id, name, type, summary, tags,
+    chars: typeof body === 'string' ? body.length : 0,
+  }));
+}
+
+export function searchKnowledge(items = [], q = '') {
+  const needle = String(q || '').trim().toLowerCase();
+  const pool = items || [];
+  if (!needle) return pool.map(k => ({ id: k.id, name: k.name, summary: k.summary, type: k.type }));
+  return pool.filter(k => [k.name, k.summary, k.type, ...(k.tags || []), k.body]
+    .some(v => String(v || '').toLowerCase().includes(needle)))
+    .map(k => ({ id: k.id, name: k.name, summary: k.summary, type: k.type, body: k.body }));
+}
+
 // 内存镜像：读操作零磁盘 IO；写操作同步原子落盘（Node 单线程，无并发交错）。
 // 每次写入都用完整快照原子 rename，进程退出不丢数据。
 let cache = read(DB_PATH) || { projects: [], tasks: [], usage: [], assets: [] };
@@ -189,10 +216,12 @@ export function makeProject(type, name) {
     characters: [],
     locations: [],
     props: [],
+    relationships: [],
+    advisorId: '',
     worldview: {},
     knowledge: [],
     assets: [],
-    settings: { format: 'hollywood', language: 'zh' },
+    settings: { format: 'hollywood', language: 'zh', exportConvention: 'hollywood' },
   };
   if (type === 'script') {
     base.episodes = [{ id: uid(), title: '第 1 集', nodes: [], outline: [], beats: [], scenes: [], shots: [] }];

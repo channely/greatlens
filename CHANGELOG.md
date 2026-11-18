@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.0] - 2026-11-18
+
+按对创作的实际影响，补齐与参考产品对齐的三层能力（侦察依据为官方公开文档 `llms-full.txt`）。
+
+### Added
+
+- **AI 定点改写**：读取范围新增「节点 / 选中区间」；Shift 点选节点区间、右键菜单（插入 / 设为定点目标 / 移动 / 删除）、拖拽排序；改写模式下可把结果**原位替换**选中节点，而非只能追加末尾
+- **落点四要素**：AI 请求携带 target / intention / constraints / authority，并附带项目级上下文（剧集清单、世界观规则、知识库**仅索引**、实体清单）；服务端据此注入 system prompt，超 800 节点全稿标注读取边界
+- **Advisor 顾问视角**：6 种官方方法论 lens（剧本医生 / 结构 / 对白 / 制片可行性 / 短剧节奏 / 视听语言），单顾问工作流，切换 AI 诊断的方法视角
+- **交付导出引擎**（零依赖纯 JS）：FDX / PDF / DOCX / TXT，Hollywood / Asian 两种剧本惯例、多集合并、批注不进导出；PDF 支持中文（STSong-Light）
+- **实体与生产管理层**：选角表、SVG 关系图谱（自动标出"声明但从未同场"的关系与零连接角色）、地点 / 道具视图 + 连续性审计、知识库 index→search→read（AI 只拿索引）、worldview 显式授权写入、跨集清单
+- **深 / 浅主题**：`useSyncExternalStore` 单例状态、localStorage 持久化、多标签同步、防闪烁；侧栏切换按钮
+
+### Changed
+
+- 知识库改为「先索引后按需读取」，避免整库注入每次对话（对齐 index → search → inspect → read 模式）
+- AI usage 记录补充 advisor / authority 元数据
+- 新增 `data-theme` 属性驱动的设计令牌层，暗色态覆盖硬编码白底
+
 ## [0.1.0] - 2026-11-17
 
 首个可用版本。自研 AI 原生剧本 / 短片创作工作台，功能与交互逻辑参考公开可观察的产品形态，代码全部重写。

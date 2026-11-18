@@ -3,13 +3,15 @@ import cors from 'cors';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { db, settings, usage, uid, makeProject, ASSETS_DIR, ROOT } from './store.js';
+import { db, settings, usage, uid, makeProject, ASSETS_DIR, ROOT, ADVISORS, knowledgeIndex, searchKnowledge } from './store.js';
 import { callModel } from './ai.js';
 import { parseScreenplay } from './fdx.js';
+import { deriveEntities, analyzeRelationships, auditContinuity } from './entities.js';
 import {
   generateImage, generateVideo, pollTask, listAssets, removeAsset,
 } from './media.js';
 import { syncStatus, configureSync, pushSync, pullSync } from './sync.js';
+import { exportRender } from './export.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -181,35 +183,98 @@ app.put('/api/sync/config', wrap(async (req, res) => res.json(configureSync(req.
 app.post('/api/sync/push', wrap(async (req, res) => res.json(pushSync())));
 app.post('/api/sync/pull', wrap(async (req, res) => res.json(pullSync())));
 
-// ---------- export ----------
-app.post('/api/export/:id', (req, res) => {
+// ---------- advisors（方法视角，只读；每项目仅一位） ----------
+app.get('/api/advisors', (_req, res) => res.json(ADVISORS));
+app.post('/api/projects/:id/advisor', (req, res) => {
+  const advisorId = String(req.body?.advisorId || '');
+  if (advisorId && !ADVISORS.some(a => a.id === advisorId)) return res.status(400).json({ error: '未知顾问' });
+  const p = db.update(d => {
+    const p = d.projects.find(x => x.id === req.params.id);
+    if (!p) return null;
+    p.advisorId = advisorId; // 传空串即解雇，保持单顾问工作流
+    p.updatedAt = new Date().toISOString();
+    return p;
+  });
+  if (!p) return res.status(404).json({ error: 'not found' });
+  res.json({ advisorId: p.advisorId, advisor: ADVISORS.find(a => a.id === p.advisorId) || null });
+});
+
+// ---------- 实体与生产管理层 ----------
+app.get('/api/projects/:id/entities', (req, res) => {
   const p = db.all().projects.find(x => x.id === req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
-  const { format = 'fountain' } = req.body || {};
-  const ep = p.episodes?.[0];
-  let content = '';
-  if (format === 'fountain') {
-    content = `Title: ${p.name}\n\n` + (ep?.nodes || []).map(n => {
-      const t = n.text || '';
-      switch (n.type) {
-        case 'scene': return `\n${t.toUpperCase()}\n`;
-        case 'action': return `${t}\n\n`;
-        case 'character': return `${t.toUpperCase()}\n`;
-        case 'dialogue': return `${t}\n\n`;
-        case 'parenthetical': return `(${t})\n`;
-        case 'transition': return `\n${t.toUpperCase()}\n\n`;
-        default: return `${t}\n`;
-      }
-    }).join('');
-  } else if (format === 'markdown') {
-    content = `# ${p.name}\n\n` + (ep?.nodes || []).map(n => `**${n.type}**  ${n.text}`).join('\n\n');
-  } else {
-    content = JSON.stringify(p, null, 2);
-  }
-  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(p.name)}.${format === 'json' ? 'json' : format === 'markdown' ? 'md' : 'fountain'}"`);
-  res.send(content);
+  res.json(deriveEntities(p));
 });
+app.get('/api/projects/:id/relationships', (req, res) => {
+  const p = db.all().projects.find(x => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  res.json(analyzeRelationships(p));
+});
+app.get('/api/projects/:id/continuity', (req, res) => {
+  const p = db.all().projects.find(x => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  res.json(auditContinuity(p));
+});
+// Knowledge：先给索引，正文按需读取（对齐官方 index → search → inspect → read）
+app.get('/api/projects/:id/knowledge', (req, res) => {
+  const p = db.all().projects.find(x => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  res.json(knowledgeIndex(p.knowledge));
+});
+app.post('/api/projects/:id/knowledge/search', (req, res) => {
+  const p = db.all().projects.find(x => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  res.json(searchKnowledge(p.knowledge, req.body?.q));
+});
+app.get('/api/projects/:id/knowledge/:kid', (req, res) => {
+  const p = db.all().projects.find(x => x.id === req.params.id);
+  const item = p?.knowledge?.find(k => k.id === req.params.kid);
+  if (!item) return res.status(404).json({ error: 'not found' });
+  res.json(item);
+});
+
+// ---------- export ----------
+app.post('/api/export/:id', wrap(async (req, res) => {
+  const p = db.all().projects.find(x => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  const { format = 'fountain', kind = 'script', convention, episodeIndexes } = req.body || {};
+  // Fountain / Markdown / JSON 保留旧实现，作为自用交付的补充格式。
+  if (format === 'fountain' || format === 'markdown' || format === 'json') {
+    const ep = p.episodes?.[0];
+    let content = '';
+    if (format === 'fountain') {
+      content = `Title: ${p.name}\n\n` + (ep?.nodes || []).map(n => {
+        const t = n.text || '';
+        switch (n.type) {
+          case 'scene': return `\n${t.toUpperCase()}\n`;
+          case 'action': return `${t}\n\n`;
+          case 'character': return `${t.toUpperCase()}\n`;
+          case 'dialogue': return `${t}\n\n`;
+          case 'parenthetical': return `(${t})\n`;
+          case 'transition': return `\n${t.toUpperCase()}\n\n`;
+          default: return `${t}\n`;
+        }
+      }).join('');
+    } else if (format === 'markdown') {
+      content = `# ${p.name}\n\n` + (ep?.nodes || []).map(n => `**${n.type}**  ${n.text}`).join('\n\n');
+    } else {
+      content = JSON.stringify(p, null, 2);
+    }
+    const ext = format === 'json' ? 'json' : format === 'markdown' ? 'md' : 'fountain';
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(p.name)}.${ext}"`);
+    return res.send(content);
+  }
+  // industry 标准：FDX / PDF / DOCX / TXT，支持多集合并与 Hollywood / Asian 约定。
+  const out = exportRender(p, {
+    format, kind,
+    episodeIndexes: Array.isArray(episodeIndexes) && episodeIndexes.length ? episodeIndexes : [0],
+    convention: convention || p.settings?.exportConvention || p.settings?.format || 'hollywood',
+  });
+  res.setHeader('Content-Type', out.contentType);
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(out.filename)}`);
+  res.send(out.body);
+}));
 
 // ---------- static ----------
 const dist = path.join(ROOT, 'dist');
