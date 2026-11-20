@@ -18,7 +18,7 @@ export function deriveEntities(project) {
     for (const n of ep.nodes || []) {
       if (n.type === 'scene' && n.text?.trim()) {
         sceneNo++;
-        sceneList.push({ no: sceneNo, episode: ei, text: n.text.trim() });
+        sceneList.push({ no: sceneNo, episode: ei, nodeId: n.id || '', text: n.text.trim() });
         const cleaned = n.text.trim().replace(/^(INT\.?|EXT\.?|INT\/EXT\.?|内|外)\s*/i, '').split(/\s*[-–—]\s*/)[0].trim();
         if (cleaned) {
           const prev = locations.get(cleaned) || { name: cleaned, scenes: [], intExt: /EXT|外/i.test(n.text) ? 'EXT' : 'INT', time: '' };

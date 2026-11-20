@@ -1,17 +1,28 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   Save, Download, Plus, Trash2, Sparkles, Send,
   FileText, ListTree, Users, MapPin, BookOpen, Clapperboard,
   Loader2, Check, Wand2, ArrowUp, ArrowDown, Copy, Network,
-  ClipboardList, Package, X, SlidersHorizontal, CheckSquare, ImagePlus, Ruler,
-  Undo2, Redo2, Command,
+  ClipboardList, Package, X, SlidersHorizontal, CheckSquare, Ruler,
+  Undo2, Redo2, Command, History, Stethoscope, Mic2, GitBranch,
 } from 'lucide-react';
-import { api, resolveAssetUrl } from '../api.js';
+import { api } from '../api.js';
 import { useTheme } from '../theme.js';
 import { CastingView, RelationshipsView, LocationsPropsView, KnowledgeView } from './Entities.jsx';
 import Timeline from './Timeline.jsx';
 import Beats from './Beats.jsx';
+import VersionHistory from '../components/VersionHistory.jsx';
+import { EntityAssetField } from '../components/AssetPicker.jsx';
+import ProjectSettingsDialog from '../components/ProjectSettingsDialog.jsx';
+import CoverView from './CoverView.jsx';
+import ScriptDoctorPanel from '../components/ScriptDoctorPanel.jsx';
+import TastePanel from '../components/TastePanel.jsx';
+import RevisionPanel from '../components/RevisionPanel.jsx';
+import SceneBoardView from '../components/SceneBoardView.jsx';
+import SpaceView from '../components/SpaceView.jsx';
+import CanvasBoard from '../components/CanvasBoard.jsx';
+import AudioStudio from '../components/AudioStudio.jsx';
 
 const FULL_DRAFT_NODE_LIMIT = 800;
 
@@ -30,6 +41,7 @@ const NODE_TYPES = [
 const TAB_GROUPS = [
   { id: 'write', label: '写', hint: '创作与结构', tabs: [
     { id: 'script', label: '剧本', icon: FileText },
+    { id: 'cover', label: '封面', icon: FileText },
     { id: 'outline', label: '大纲', icon: ListTree },
     { id: 'beats', label: '节拍', icon: SlidersHorizontal },
   ] },
@@ -37,6 +49,8 @@ const TAB_GROUPS = [
     { id: 'scenes', label: '场景', icon: MapPin },
     { id: 'shots', label: '分镜', icon: Clapperboard },
     { id: 'timeline', label: '时间轴', icon: Ruler },
+    { id: 'space', label: 'Space', icon: Network },
+    { id: 'audio', label: '声音', icon: Mic2 },
   ] },
   { id: 'manage', label: '管', hint: '资产与生产', tabs: [
     { id: 'characters', label: '角色档案', icon: Users },
@@ -94,10 +108,12 @@ function parseAIText(text) {
 
 export default function Editor() {
   const { id } = useParams();
+  const nav = useNavigate();
+  const initialTab = new URLSearchParams(window.location.search).get('tab');
   const [project, setProject] = useState(null);
   const [epIdx, setEpIdx] = useState(0);
-  const [tab, setTab] = useState('script');
-  const [prodTab, setProdTab] = useState('casting');
+  const [tab, setTab] = useState(() => ['outline', 'beats', 'characters', 'cover', 'audio'].includes(initialTab) ? initialTab : initialTab === 'locations' ? 'production' : 'script');
+  const [prodTab, setProdTab] = useState(() => initialTab === 'locations' ? 'locations' : 'casting');
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
   const [aiOpen, setAiOpen] = useState(true);
@@ -115,12 +131,22 @@ export default function Editor() {
   const [intention, setIntention] = useState('');
   const [constraints, setConstraints] = useState('');
   const [authLayers, setAuthLayers] = useState(['script']);
+  const [attachedKnowledge, setAttachedKnowledge] = useState([]); // [{ id, role }]，本次请求按需加载正文
   const [showStructured, setShowStructured] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [versionOpen, setVersionOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [doctorOpen, setDoctorOpen] = useState(false);
+  const [tasteOpen, setTasteOpen] = useState(false);
+  const [revisionOpen, setRevisionOpen] = useState(false);
+  const [feedbackTick, setFeedbackTick] = useState(0);
+  const [saveConflict, setSaveConflict] = useState('');
   const { theme, toggleTheme } = useTheme();
   const [derived, setDerived] = useState(null);
   const saveTimer = useRef(null);
+  const saveEpoch = useRef(0);
+  const conflictRef = useRef(false);
   const chatEnd = useRef(null);
   const abortRef = useRef(null);
   const dirtyRef = useRef(false);
@@ -138,15 +164,27 @@ export default function Editor() {
 
   useEffect(() => {
     let alive = true;
+    saveEpoch.current += 1;
+    const epoch = saveEpoch.current;
+    clearTimeout(saveTimer.current);
+    conflictRef.current = false;
+    dirtyRef.current = false;
     abortRef.current?.abort();
     setProject(null);
-    api.projects.get(id).then(p => { if (alive) { pastRef.current = []; futureRef.current = []; syncHistory(); projectRef.current = p; setProject(p); } })
-      .catch(e => { if (alive) setError(e.message); });
-    api.ai.advisors().then(a => { if (alive) setAdvisors(a); }).catch(() => {});
+    setSaveConflict('');
+    setSaved(false);
+    api.projects.get(id).then(p => {
+      if (alive && epoch === saveEpoch.current) {
+        pastRef.current = []; futureRef.current = []; syncHistory();
+        projectRef.current = p; setProject(p);
+      }
+    }).catch(e => { if (alive && epoch === saveEpoch.current) setError(e.message); });
+    api.ai.advisors().then(a => { if (alive && epoch === saveEpoch.current) setAdvisors(a); }).catch(() => {});
     return () => { alive = false; };
   }, [id]);
 
   useEffect(() => () => {
+    saveEpoch.current += 1;
     clearTimeout(saveTimer.current);
     abortRef.current?.abort();
   }, []);
@@ -192,15 +230,58 @@ export default function Editor() {
   const hasSel = sel.start >= 0 && sel.start < nodes.length;
 
   function scheduleSave() {
+    if (conflictRef.current) return;
     setSaved(false);
     dirtyRef.current = true;
     clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
+    saveTimer.current = setTimeout(async () => {
       const cur = projectRef.current;
-      if (!cur || !dirtyRef.current) return;
+      const epoch = saveEpoch.current;
+      if (!cur || !dirtyRef.current || epoch !== saveEpoch.current) return;
+      const payload = structuredClone(cur);
       dirtyRef.current = false;
-      api.projects.save(cur.id, cur).then(() => setSaved(true)).catch(e => setError(e.message));
+      try {
+        const saved = await api.projects.save(cur.id, payload, cur.revision);
+        if (epoch !== saveEpoch.current || projectRef.current?.id !== cur.id) return;
+        projectRef.current = { ...projectRef.current, revision: saved.revision, versionHash: saved.versionHash };
+        setProject(prev => prev && prev.id === cur.id
+          ? { ...prev, revision: saved.revision, versionHash: saved.versionHash }
+          : prev);
+        setSaved(!dirtyRef.current);
+      } catch (e) {
+        if (epoch !== saveEpoch.current) return;
+        setError(e.message);
+        if (/已被其他会话更新|409/.test(String(e.message || ''))) {
+          conflictRef.current = true;
+          setSaveConflict(e.message);
+        }
+      }
     }, 700);
+  }
+
+  function onSettingsSaved(saved) {
+    projectRef.current = saved;
+    setProject(saved);
+    setSaved(true);
+    setError('');
+  }
+
+  function onRestored(project) {
+    saveEpoch.current += 1;
+    clearTimeout(saveTimer.current);
+    conflictRef.current = false;
+    dirtyRef.current = false;
+    pastRef.current = [];
+    futureRef.current = [];
+    syncHistory();
+    setSel({ start: -1, end: -1 });
+    setCharSel(null);
+    projectRef.current = project;
+    setProject(project);
+    setSaved(true);
+    setSaveConflict('');
+    setError('');
+    setVersionOpen(false);
   }
 
   // 把一次完整的项目快照提交到状态与历史栈。record=true 时记录为可撤销的一步。
@@ -305,6 +386,11 @@ export default function Editor() {
     return { scenes, characters };
   }, [nodes]);
 
+  const derivedScenes = useMemo(
+    () => (derived?.scenes || []).filter(s => s.episode === epIdx),
+    [derived, epIdx],
+  );
+
   // 写作现场的连续性提示：与服务端 norm 规则一致，只比对当前剧集，登记表中已有条目时才提示。
   const normName = s => String(s || '').trim().toUpperCase().replace(/\s*（.*?）\s*/g, '').replace(/\(.*?\)/g, '').replace(/\s+/g, ' ');
   const liveIssues = useMemo(() => {
@@ -330,6 +416,11 @@ export default function Editor() {
       return `【节点 ${charSel.nodeIdx + 1}（${n?.type || '?'}）中被选中的文字】\n${charSel.text}`;
     }
     if (scope === 'node' && hasSel) return nodeLine(nodes[selLo]);
+    if (scope === 'cursor') {
+      // 光标落在哪个节点，就以该节点为中心取前后各两个节点，而不是笼统的最近五条。
+      const center = hasSel ? selLo : Math.max(0, nodes.length - 1);
+      return nodes.slice(Math.max(0, center - 2), center + 3).map(nodeLine).join('\n');
+    }
     if (scope === 'range' && hasSel) return nodes.slice(selLo, selHi + 1).map(nodeLine).join('\n');
     if (scope === 'full') return nodes.slice(0, FULL_DRAFT_NODE_LIMIT).map(nodeLine).join('\n');
     if (scope === 'outline') return (ep?.outline || []).map(o => o.text).join('\n');
@@ -376,6 +467,7 @@ export default function Editor() {
     try {
       await api.ai.stream({
         prompt: userText, scope, mode: aiMode, context: contextForAI(),
+        projectId: project?.id || '',
         target: targetLabel(),
         intention: intention.trim(),
         constraints: constraints.trim(),
@@ -387,6 +479,13 @@ export default function Editor() {
           episodes: (project.episodes || []).map((e, i) => ({ index: i + 1, title: e.title })),
           worldview: project.worldview || {},
           knowledgeIndex: (project.knowledge || []).map(k => ({ id: k.id, name: k.name, type: k.type, summary: k.summary })),
+          // 本次点名加载的资料正文（有界，每份 ≤ 4000 字；仅作证据，不逐字复制）
+          knowledgeExcerpts: attachedKnowledge.map(a => {
+            const k = (project.knowledge || []).find(x => x.id === a.id);
+            if (!k) return null;
+            const body = String(k.body || '').slice(0, 4000);
+            return body ? { name: k.name, role: a.role || '作为本次写作的证据参考', body } : null;
+          }).filter(Boolean),
           characters: (project.characters || []).map(c => c.name).filter(Boolean),
           locations: (project.locations || []).map(l => l.name).filter(Boolean),
           props: (project.props || []).map(p => p.name).filter(Boolean),
@@ -407,6 +506,14 @@ export default function Editor() {
         setError(err.message);
       }
     } finally { if (abortRef.current === controller) setStreaming(false); }
+  }
+
+  // 作者口味反馈：把采纳 / 弃用的 AI 输出沉淀为长期偏好（本地确定性计算）。
+  function giveFeedback(text, verdict) {
+    if (!project?.id || !text) return;
+    api.projects.taste.feedback(project.id, { verdict, text, mode: aiMode, scope })
+      .then(() => setFeedbackTick(t => t + 1))
+      .catch(() => {});
   }
 
   // 定点替换：改写模式下若选中了字级文字/节点/区间，原位替换该段；否则追加到末尾。
@@ -455,6 +562,14 @@ export default function Editor() {
     } catch (e) { setError(e.message); }
   }
 
+  async function convertToCinema() {
+    if (!confirm('把当前 Script 一次性转换为独立的 Cinema 项目？源剧本保持不变，两者之后各自演进，不会自动同步。')) return;
+    try {
+      const c = await api.projects.toCinema(project.id);
+      nav(`/cinema/${c.id}`);
+    } catch (e) { setError(e.message || '转换失败'); }
+  }
+
   if (error && !project) return <main className="container page"><div className="alert error">{error}</div><Link to="/projects">返回项目</Link></main>;
   if (!project) return <main className="container page"><div className="loading"><Loader2 className="spin" size={20} /> 加载中…</div></main>;
 
@@ -471,9 +586,13 @@ export default function Editor() {
         </div>
         <div className="ws-actions">
           <span className={`save-state ${saved ? 'ok' : ''}`}>{saved ? <><Check size={13} /> 已保存</> : '编辑中…'}</span>
+          {saveConflict && <span className="muted small" title={saveConflict}>保存冲突，请刷新</span>}
+          <button className="btn btn-ghost sm" title="项目设置" onClick={() => setSettingsOpen(true)}><SlidersHorizontal size={14} /> 设置</button>
+          <button className="btn btn-ghost sm" title="版本历史与恢复" onClick={() => setVersionOpen(true)}><History size={14} /> 版本</button>
           <button className="icon-btn" title="撤销（⌘/Ctrl+Z，输入框内用文本撤销）" disabled={!history.undo} onClick={undo}><Undo2 size={15} /></button>
           <button className="icon-btn" title="重做（⇧⌘/Ctrl+Z）" disabled={!history.redo} onClick={redo}><Redo2 size={15} /></button>
           <button className="btn btn-ghost sm" title="命令面板（⌘/Ctrl+K）" onClick={() => setCmdOpen(true)}><Command size={13} /> 命令</button>
+          {project.type === 'script' && <button className="btn btn-ghost sm" title="一次性复制场景/角色/道具为独立 Cinema 项目（源不变，不自动同步）" onClick={convertToCinema}><Clapperboard size={14} /> 转为 Cinema</button>}
           <button className="btn btn-ghost sm" onClick={() => doExport('fountain')}><Download size={14} /> Fountain</button>
           <button className="btn btn-ghost sm" onClick={() => setExportOpen(true)}><Download size={14} /> 交付导出</button>
           <button className={`btn btn-ghost sm ${aiOpen ? 'active' : ''}`} onClick={() => setAiOpen(v => !v)}><Sparkles size={14} /> AI</button>
@@ -570,9 +689,10 @@ export default function Editor() {
               </div>
             )}
 
+            {tab === 'cover' && <CoverView project={project} mutate={mutate} />}
             {tab === 'outline' && <OutlineView ep={ep} mutate={mutate} onAsk={q => { setPrompt(q); setAiOpen(true); }} />}
             {tab === 'beats' && <Beats ep={ep} mutate={mutate} onAsk={q => { setPrompt(q); setAiOpen(true); }} />}
-            {tab === 'scenes' && <ScenesView scenes={derivedSC.scenes} nodes={nodes} />}
+            {tab === 'scenes' && <SceneBoardView project={project} ep={ep} scenes={derivedScenes} mutate={mutate} />}
             {tab === 'characters' && <CharactersView project={project} mutate={mutate} names={derivedSC.characters} />}
             {tab === 'production' && (
               <div className="production-view">
@@ -586,7 +706,9 @@ export default function Editor() {
               </div>
             )}
             {tab === 'world' && <WorldView project={project} mutate={mutate} />}
-            {tab === 'shots' && <ShotsView ep={ep} mutate={mutate} />}
+            {tab === 'shots' && <ShotsView ep={ep} project={project} projectId={project.id} mutate={mutate} />}
+            {tab === 'space' && <SpaceView project={project} mutate={mutate} />}
+            {tab === 'audio' && <AudioStudio project={project} episodeId={ep?.id} />}
             {tab === 'timeline' && <Timeline ep={ep} project={project} mutate={mutate} onAsk={q => { setPrompt(q); setAiOpen(true); }} />}
           </div>
         </div>
@@ -595,7 +717,12 @@ export default function Editor() {
           <aside className="ai-panel">
             <div className="ai-head">
               <div><Sparkles size={16} /> <strong>创作助手</strong></div>
-              <button className="icon-btn" onClick={() => setAiOpen(false)}>×</button>
+              <div className="ai-head-actions">
+                <button className="btn btn-ghost sm" title="剧本医生：诊断 → 处方 → 采纳" onClick={() => setDoctorOpen(true)}><Stethoscope size={13} /> 医生</button>
+                <button className="btn btn-ghost sm" title="作者口味记忆：管理长期偏好" onClick={() => setTasteOpen(true)}><Sparkles size={13} /> 口味</button>
+                <button className="btn btn-ghost sm" title="修订说明与节拍备选方案" onClick={() => setRevisionOpen(true)}><GitBranch size={13} /> 修订</button>
+                <button className="icon-btn" onClick={() => setAiOpen(false)}>×</button>
+              </div>
             </div>
             <div className="ai-config">
               <label>读取范围
@@ -628,6 +755,16 @@ export default function Editor() {
                   </button>)}
                 </div></div>
                 <p className="auth-hint">勾选层并在消息中点名键值，助手才会写入。</p>
+                {(project.knowledge || []).length > 0 && <div className="knowledge-attach">
+                  <span>本次引用资料（点名后才加载正文）</span>
+                  {(project.knowledge || []).map(k => {
+                    const on = attachedKnowledge.some(a => a.id === k.id);
+                    return <div className="knowledge-attach-row" key={k.id}>
+                      <label><input type="checkbox" checked={on} onChange={e => setAttachedKnowledge(prev => e.target.checked ? [...prev, { id: k.id, role: '' }] : prev.filter(a => a.id !== k.id))} /> {k.name}</label>
+                      {on && <input className="knowledge-role" placeholder="它在这次写作里的作用，例：人物原型 / 时代背景" value={(attachedKnowledge.find(a => a.id === k.id) || {}).role || ''} onChange={e => setAttachedKnowledge(prev => prev.map(a => a.id === k.id ? { ...a, role: e.target.value } : a))} />}
+                    </div>;
+                  })}
+                </div>}
               </div>}
             </div>
             <div className="chat-list">
@@ -655,6 +792,8 @@ export default function Editor() {
                   {m.role === 'assistant' && m.text && <div className="apply-row">
                     {canReplace && <button className="apply-btn primary" onClick={() => applyAIText(m.text, true)}><Check size={12} /> 替换选中节点</button>}
                     <button className="apply-btn" onClick={() => applyAIText(m.text, false)}><Copy size={12} /> 采纳到剧本末尾</button>
+                    <button className="apply-btn" title="记住这种写法，后续 AI 会保持" onClick={() => { applyAIText(m.text, false); giveFeedback(m.text, 'accepted'); }}>👍 喜欢</button>
+                    <button className="apply-btn" title="避免同类写法，后续 AI 会规避" onClick={() => giveFeedback(m.text, 'rejected')}>👎 弃用</button>
                   </div>}
                 </div>
               ))}
@@ -685,7 +824,17 @@ export default function Editor() {
         <button className="danger" onClick={() => { removeNode(contextMenu.idx); setContextMenu(null); }}><Trash2 size={13} /> 删除节点</button>
       </div>}
 
-      {exportOpen && <ExportDialog project={project} onClose={() => setExportOpen(false)} onExport={doExport} />}
+      {exportOpen && <ExportDialog project={project} onClose={() => setExportOpen(false)} onExport={doExport} onSaved={onSettingsSaved} />}
+      {settingsOpen && <ProjectSettingsDialog project={project} onClose={() => setSettingsOpen(false)} onSaved={onSettingsSaved} />}
+      {doctorOpen && <ScriptDoctorPanel project={project} episodeId={ep?.id} onClose={() => setDoctorOpen(false)} onSaved={onSettingsSaved} />}
+      {tasteOpen && <TastePanel projectId={project.id} refreshKey={feedbackTick} onClose={() => setTasteOpen(false)} />}
+      {revisionOpen && <RevisionPanel project={project} episodeId={ep?.id} onClose={() => setRevisionOpen(false)} onSaved={onSettingsSaved} />}
+      {versionOpen && <VersionHistory
+        projectId={project.id}
+        baseRevision={project.revision}
+        onClose={() => setVersionOpen(false)}
+        onRestored={onRestored}
+      />}
       {cmdOpen && <CommandPalette
         commands={[
           ...TAB_GROUPS.flatMap(g => g.tabs.map(t => ({ label: `切到「${t.label}」`, group: '导航', icon: t.icon, run: () => setTab(t.id) }))),
@@ -696,6 +845,7 @@ export default function Editor() {
           { label: '打开创作助手', group: '视图', icon: Sparkles, run: () => setAiOpen(true) },
           { label: '关闭创作助手', group: '视图', icon: X, run: () => setAiOpen(false) },
           { label: theme === 'dark' ? '切换到浅色主题' : '切换到深色主题', group: '视图', icon: Command, run: toggleTheme },
+          { label: '版本历史…', group: '文件', icon: History, run: () => setVersionOpen(true) },
           { label: '交付导出…', group: '文件', icon: Download, run: () => setExportOpen(true) },
           { label: '导出 Fountain', group: '文件', icon: Download, run: () => doExport('fountain') },
         ]}
@@ -736,7 +886,8 @@ function CommandPalette({ commands, onClose }) {
   );
 }
 
-function ExportDialog({ project, onClose, onExport }) {
+function ExportDialog({ project, onClose, onExport, onSaved }) {
+  const [conventionError, setConventionError] = useState('');
   const [kind, setKind] = useState('script');
   const [format, setFormat] = useState('pdf');
   const [convention, setConvention] = useState(project.settings?.exportConvention || project.settings?.format || 'hollywood');
@@ -745,6 +896,14 @@ function ExportDialog({ project, onClose, onExport }) {
   const [showInfo, setShowInfo] = useState(false);
   const check = () => api.projects.readiness(project.id).then(setReadiness).catch(() => {});
   useEffect(() => { check(); }, [project.id]);
+  async function changeConvention(value) {
+    setConvention(value);
+    setConventionError('');
+    try {
+      const saved = await api.projects.saveSettings(project.id, { settings: { exportConvention: value } }, project.revision);
+      onSaved?.(saved);
+    } catch (e) { setConventionError(e.message || '保存格式失败'); }
+  }
   const formats = kind === 'script'
     ? [['fdx', 'FDX（Final Draft）'], ['pdf', 'PDF'], ['docx', 'DOCX'], ['txt', 'TXT']]
     : [['pdf', 'PDF'], ['docx', 'DOCX'], ['txt', 'TXT']];
@@ -762,9 +921,10 @@ function ExportDialog({ project, onClose, onExport }) {
           <label>格式<select value={format} onChange={e => setFormat(e.target.value)}>
             {formats.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select></label>
-          <label>剧本惯例<select value={convention} onChange={e => setConvention(e.target.value)}>
+          <label>剧本惯例<select value={convention} onChange={e => changeConvention(e.target.value)}>
             <option value="hollywood">Hollywood</option><option value="asian">Asian</option>
           </select></label>
+          {conventionError && <div className="alert error sm">{conventionError}</div>}
           <div className="export-episodes"><span>选择剧集（按顺序合并）</span>
             {project.episodes.map((e, i) => <label key={e.id}><input type="checkbox" checked={episodes.includes(i)} onChange={() => toggleEp(i)} /> {e.title}</label>)}
           </div>
@@ -881,7 +1041,8 @@ function WorldView({ project, mutate }) {
         {entries.length === 0 && <div className="empty small">还没有规则。</div>}
         {entries.map(([k, v]) => (
           <div className="kv-row" key={k}>
-            <code>{k}</code><span>{v}</span>
+            <code>{k}</code>
+            <input className="kv-value" value={v} onChange={e => mutate((_, p) => { p.worldview[k] = e.target.value; })} placeholder="规则内容" />
             <button className="icon-btn danger" onClick={() => mutate((_, p) => { delete p.worldview[k]; })}><Trash2 size={13} /></button>
           </div>
         ))}
@@ -890,89 +1051,97 @@ function WorldView({ project, mutate }) {
   );
 }
 
-function ShotsView({ ep, mutate }) {
+function ShotsView({ ep, project, projectId, mutate }) {
   const shots = ep?.shots || [];
-  const [pickerFor, setPickerFor] = useState(null); // 正在为哪个镜头选参考图（索引）
+  const [view, setView] = useState('table');
+
+  function patchShot(i, patch) {
+    mutate(e => { Object.assign(e.shots[i], patch); });
+  }
+
+  function refField(s, i, label = '参考', slot = 'refImage') {
+    return <EntityAssetField
+      label={label}
+      project={project}
+      generation={{
+        purpose: 'storyboard', targetKind: 'shot', targetId: s.id, episodeId: ep.id, slot,
+        ...(s.continuity && i > 0 ? { requirePrevFrame: true } : {}),
+      }}
+      binding={{ kind: 'shot', projectId, episodeId: ep.id, entityId: s.id, slot }}
+      value={s[slot]}
+      onChange={ref => patchShot(i, { [slot]: ref })}
+    />;
+  }
+
+  function commitLayout(shotId, pos) {
+    mutate((_, p) => {
+      p.viewLayouts = p.viewLayouts || {};
+      p.viewLayouts.storyboard = p.viewLayouts.storyboard || {};
+      p.viewLayouts.storyboard[ep.id] = { ...(p.viewLayouts.storyboard[ep.id] || {}), [shotId]: pos };
+    });
+  }
+
   return (
     <div className="simple-view">
-      <div className="view-head"><div><h2>分镜</h2><p className="muted">为每个镜头写清：改变什么、观众看到什么。可挂参考图作为视觉约束。</p></div>
-        <button className="btn btn-primary sm" onClick={() => mutate(e => e.shots.push({ id: `s_${Date.now()}`, scene: '', shotSize: '中景', camera: '固定', motion: '', duration: '3s', visual: '', audio: '', refImage: null }))}><Plus size={14} /> 添加镜头</button>
+      <div className="view-head">
+        <div><h2>分镜</h2><p className="muted">table / panel / canvas 三视图直接读写同一 ep.shots；画布只存坐标，不改变镜头顺序。</p></div>
+        <div className="view-head-actions">
+          <div className="loc-view-switch">
+            <button className={view === 'panel' ? 'active' : ''} onClick={() => setView('panel')}>Panel</button>
+            <button className={view === 'table' ? 'active' : ''} onClick={() => setView('table')}>Table</button>
+            <button className={view === 'canvas' ? 'active' : ''} onClick={() => setView('canvas')}>Canvas</button>
+          </div>
+          <button className="btn btn-primary sm" onClick={() => mutate(e => e.shots.push({ id: `s_${Date.now()}`, scene: '', shotSize: '中景', camera: '固定', motion: '', duration: '3s', visual: '', audio: '', refImage: null, storyboardImage: null, continuity: false }))}><Plus size={14} /> 添加镜头</button>
+        </div>
       </div>
-      {shots.length === 0 ? <div className="empty small">还没有镜头。用 AI 的「分镜」模式从场景生成。</div> : (
+      {shots.length === 0 ? <div className="empty small">还没有镜头。用 AI 的「分镜」模式从场景生成。</div> : view === 'table' ? (
         <div className="shot-table-wrap"><table className="shot-table">
-          <thead><tr><th>#</th><th>参考图</th><th>场景</th><th>景别</th><th>机位</th><th>运动</th><th>时长</th><th>画面</th><th>声音</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>参考图 / 前帧</th><th>续前帧</th><th>场景</th><th>景别</th><th>机位</th><th>运动</th><th>时长</th><th>画面</th><th>声音</th><th></th></tr></thead>
           <tbody>{shots.map((s, i) => <tr key={s.id}>
             <td>{i + 1}</td>
-            <td>
-              <div className="shot-ref-cell">
-                <button className="shot-ref-btn" title="选择参考图" onClick={() => setPickerFor(i)}>
-                  {s.refImage?.url
-                    ? <img src={resolveAssetUrl(s.refImage.url)} alt="参考图" />
-                    : <ImagePlus size={16} />}
-                </button>
-                {s.refImage?.url && <button className="shot-ref-clear" title="移除参考图" onClick={() => mutate(ep2 => { ep2.shots[i].refImage = null; })}>×</button>}
-              </div>
-            </td>
-            <td><input value={s.scene} onChange={e => mutate(ep2 => { ep2.shots[i].scene = e.target.value; })} /></td>
-            <td><select value={s.shotSize} onChange={e => mutate(ep2 => { ep2.shots[i].shotSize = e.target.value; })}>{['大远景','远景','全景','中景','近景','特写','大特写'].map(x => <option key={x}>{x}</option>)}</select></td>
-            <td><input value={s.camera} onChange={e => mutate(ep2 => { ep2.shots[i].camera = e.target.value; })} /></td>
-            <td><input value={s.motion} onChange={e => mutate(ep2 => { ep2.shots[i].motion = e.target.value; })} /></td>
-            <td><input value={s.duration} onChange={e => mutate(ep2 => { ep2.shots[i].duration = e.target.value; })} /></td>
-            <td><textarea rows={2} value={s.visual} onChange={e => mutate(ep2 => { ep2.shots[i].visual = e.target.value; })} /></td>
-            <td><textarea rows={2} value={s.audio} onChange={e => mutate(ep2 => { ep2.shots[i].audio = e.target.value; })} /></td>
+            <td>{refField(s, i)}{refField(s, i, '分镜图', 'storyboardImage')}</td>
+            <td><input type="checkbox" checked={!!s.continuity} disabled={i === 0} title={i === 0 ? '第一镜没有前帧' : '开启后，生成分镜图前必须已有前一镜的分镜图，否则阻断且不扣费'} onChange={e => patchShot(i, { continuity: e.target.checked })} /></td>
+            <td><input value={s.scene} onChange={e => patchShot(i, { scene: e.target.value })} /></td>
+            <td><select value={s.shotSize} onChange={e => patchShot(i, { shotSize: e.target.value })}>{['大远景','远景','全景','中景','近景','特写','大特写'].map(x => <option key={x}>{x}</option>)}</select></td>
+            <td><input value={s.camera} onChange={e => patchShot(i, { camera: e.target.value })} /></td>
+            <td><input value={s.motion} onChange={e => patchShot(i, { motion: e.target.value })} /></td>
+            <td><input value={s.duration} onChange={e => patchShot(i, { duration: e.target.value })} /></td>
+            <td><textarea rows={2} value={s.visual} onChange={e => patchShot(i, { visual: e.target.value })} /></td>
+            <td><textarea rows={2} value={s.audio} onChange={e => patchShot(i, { audio: e.target.value })} /></td>
             <td><button className="icon-btn danger" onClick={() => mutate(ep2 => ep2.shots.splice(i, 1))}><Trash2 size={13} /></button></td>
           </tr>)}</tbody>
         </table></div>
+      ) : view === 'panel' ? (
+        <div className="shot-panel-grid">
+          {shots.map((s, i) => <div className="shot-panel-card" key={s.id}>
+            <div className="shot-panel-head"><strong>SHOT {String(i + 1).padStart(2, '0')}</strong><span className="muted small">{s.duration || '—'}</span></div>
+            {refField(s, i)}
+            {refField(s, i, '分镜图', 'storyboardImage')}
+            <label className="shot-continuity"><input type="checkbox" checked={!!s.continuity} disabled={i === 0} onChange={e => patchShot(i, { continuity: e.target.checked })} /> 续前帧（缺前帧则阻断，不扣费）</label>
+            <label>场景<input value={s.scene || ''} onChange={e => patchShot(i, { scene: e.target.value })} /></label>
+            <div className="form-two">
+              <label>景别<select value={s.shotSize || '中景'} onChange={e => patchShot(i, { shotSize: e.target.value })}>{['大远景','远景','全景','中景','近景','特写','大特写'].map(x => <option key={x}>{x}</option>)}</select></label>
+              <label>机位<input value={s.camera || ''} onChange={e => patchShot(i, { camera: e.target.value })} /></label>
+            </div>
+            <label>画面<textarea rows={3} value={s.visual || ''} onChange={e => patchShot(i, { visual: e.target.value })} /></label>
+            <label>声音<textarea rows={2} value={s.audio || ''} onChange={e => patchShot(i, { audio: e.target.value })} /></label>
+            <button className="icon-btn danger" onClick={() => mutate(ep2 => ep2.shots.splice(i, 1))}><Trash2 size={13} /></button>
+          </div>)}
+        </div>
+      ) : (
+        <CanvasBoard
+          items={shots.map((s, i) => ({ id: s.id, title: `SHOT ${i + 1}`, text: s.visual || s.scene || '未填写' }))}
+          layout={project.viewLayouts?.storyboard?.[ep.id] || {}}
+          onCommit={commitLayout}
+          empty="暂无镜头"
+          renderItem={item => (
+            <>
+              <div className="loc-node-head"><span className="loc-node-title">{item.title}</span></div>
+              <div className="loc-node-sub"><span>{item.text.slice(0, 44)}</span></div>
+            </>
+          )}
+        />
       )}
-      {pickerFor !== null && <RefImagePicker
-        current={shots[pickerFor]?.refImage}
-        onPick={(asset) => {
-          mutate(ep2 => { ep2.shots[pickerFor].refImage = { assetId: asset.id, url: asset.url, name: asset.prompt || asset.model || '参考图', note: '' }; });
-          setPickerFor(null);
-        }}
-        onNote={(note) => mutate(ep2 => { if (ep2.shots[pickerFor].refImage) ep2.shots[pickerFor].refImage.note = note; })}
-        onClose={() => setPickerFor(null)}
-      />}
-    </div>
-  );
-}
-
-// 参考图选择器：从本地素材库挑一张图，可写视觉约束备注，作为镜头的参考图槽位。
-function RefImagePicker({ current, onPick, onNote, onClose }) {
-  const [assets, setAssets] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [note, setNote] = useState(current?.note || '');
-  const [selected, setSelected] = useState(current?.assetId || null);
-  useEffect(() => {
-    let alive = true;
-    api.media.assets('image')
-      .then(list => { if (alive) setAssets(Array.isArray(list) ? list : []); })
-      .catch(() => {})
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, []);
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal ref-picker" onClick={e => e.stopPropagation()}>
-        <div className="modal-head"><h3>选择镜头参考图</h3><button className="icon-btn" onClick={onClose}><X size={16} /></button></div>
-        <div className="ref-picker-body">
-          {loading && <div className="loading"><Loader2 className="spin" size={16} /> 载入素材库…</div>}
-          {!loading && assets.length === 0 && <div className="empty small">素材库还没有图片。先到「素材」页生成或上传图片。</div>}
-          <div className="ref-grid">
-            {assets.map(a => <button key={a.id} className={`ref-tile ${selected === a.id ? 'on' : ''}`} onClick={() => setSelected(a.id)} onDoubleClick={() => onPick(a)}>
-              <img src={resolveAssetUrl(a.url)} alt={a.prompt || '素材'} />
-              {selected === a.id && <span className="ref-check"><Check size={14} /></span>}
-            </button>)}
-          </div>
-          <label className="ref-note">视觉约束备注（会作为 AI 改写该镜头时的参考）
-            <textarea rows={2} value={note} placeholder="例：冷蓝色调、低机位仰拍、画面留白" onChange={e => setNote(e.target.value)} onBlur={() => onNote(note)} />
-          </label>
-        </div>
-        <div className="modal-foot">
-          <button className="btn btn-ghost" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" disabled={!selected} onClick={() => onPick(assets.find(a => a.id === selected))}><Check size={14} /> 使用这张</button>
-        </div>
-      </div>
     </div>
   );
 }

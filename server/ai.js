@@ -1,4 +1,5 @@
 import { settings, usage, ADVISORS } from './store.js';
+import { tastePromptForProject } from './taste.js';
 
 const SYSTEM_BASE = `你是 GreatLens 的剧本创作助手。你与编剧在同一个剧本编辑器里工作，剧本是唯一事实来源。
 规则：
@@ -15,10 +16,10 @@ const SYSTEM_BASE = `你是 GreatLens 的剧本创作助手。你与编剧在同
 // 官方全稿读取上限：超过 800 节点不再整稿灌入，改为索引 + 定点读取（对齐 laper.ai 的边界设计）。
 export const FULL_DRAFT_NODE_LIMIT = 800;
 
-function buildMessages(body) {
+export function buildMessages(body) {
   const {
     scope, context, prompt, mode = 'chat',
-    target, intention, constraints, authority, advisorId, project,
+    target, intention, constraints, authority, advisorId, project, projectId,
   } = body;
   const scopeText = scope ? `\n【读取范围】${scope}` : '';
   let contextText = context ? `\n【剧本上下文】\n${typeof context === 'string' ? context : JSON.stringify(context, null, 2)}` : '';
@@ -48,6 +49,9 @@ function buildMessages(body) {
     if (Array.isArray(project.knowledgeIndex) && project.knowledgeIndex.length) {
       parts.push(`【知识库索引 · 仅索引，正文未加载】\n${project.knowledgeIndex.map(k => `- ${k.name}（${k.type}）：${k.summary || '无摘要'}`).join('\n')}\n如需引用某份资料的事实，先告诉用户你要读哪一份，不要把索引当正文。`);
     }
+    if (Array.isArray(project.knowledgeExcerpts) && project.knowledgeExcerpts.length) {
+      parts.push(`【本次点名加载的资料正文 · 仅作证据，不逐字复制进剧本】\n${project.knowledgeExcerpts.map((k, i) => `- 资料${i + 1}「${k.name}」用途：${k.role || '证据参考'}\n${k.body}`).join('\n\n')}`);
+    }
     if (Array.isArray(project.characters) && project.characters.length) parts.push(`【项目角色】${project.characters.join('、')}`);
     if (Array.isArray(project.locations) && project.locations.length) parts.push(`【项目地点】${project.locations.join('、')}`);
     if (Array.isArray(project.props) && project.props.length) parts.push(`【项目道具】${project.props.join('、')}`);
@@ -58,6 +62,7 @@ function buildMessages(body) {
   }
   const advisor = ADVISORS.find(a => a.id === advisorId);
   const advisorText = advisor ? `\n【激活的顾问方法视角：${advisor.name} / ${advisor.en}】${advisor.method}\n请以上述方法论作为本次诊断/改写的主要 lens。` : '';
+  const tasteText = tastePromptForProject(projectId);
   const modeHint = {
     chat: '',
     diagnose: '\n请以诊断优先：指出结构、节奏、角色压力的具体问题，附修改建议，不直接重写全稿。',
@@ -66,7 +71,7 @@ function buildMessages(body) {
     continue: '\n请从当前位置续写，保持角色声音与场景节奏一致。',
   }[mode] || '';
   return [
-    { role: 'system', content: SYSTEM_BASE + scopeText + projectText + advisorText + modeHint },
+    { role: 'system', content: SYSTEM_BASE + scopeText + projectText + advisorText + tasteText + modeHint },
     { role: 'user', content: `${prompt || ''}${contextText}${landing.length ? '\n\n' + landing.join('\n') : ''}` },
   ];
 }

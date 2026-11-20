@@ -33,6 +33,17 @@ export default function Home() {
   const [draft, setDraft] = useState('');
   const nav = useNavigate();
 
+  // 把首页输入带入 idea-first 向导：文本存入 sessionStorage，跳到项目页自动打开。
+  // 只做传递，不在首页建项或生成，避免"假输入"再次落空。
+  function startCreating() {
+    const text = draft.trim();
+    try {
+      if (text) sessionStorage.setItem('gl:ideaSeed', text);
+      else sessionStorage.removeItem('gl:ideaSeed');
+    } catch { /* 隐私模式下忽略 */ }
+    nav(text ? '/projects?fromIdea=1' : '/projects');
+  }
+
   return (
     <div className="home">
       <section className="home-hero">
@@ -56,7 +67,7 @@ export default function Home() {
                 <Link to="/projects" className="prompt-chip"><BookOpen size={13} /> Novel</Link>
                 <Link to="/assets" className="prompt-chip"><Images size={13} /> AI Visuals</Link>
               </div>
-              <button className="btn btn-primary" onClick={() => nav('/projects')}><Wand2 size={15} /> 开始创作 <ArrowRight size={15} /></button>
+              <button className="btn btn-primary" onClick={startCreating}><Wand2 size={15} /> 开始创作 <ArrowRight size={15} /></button>
             </div>
           </div>
 
@@ -99,7 +110,7 @@ export default function Home() {
       <footer className="home-footer">
         <span>GreatLens · 自研实现 · 供个人学习与自用</span>
         <div className="home-footer-icons">
-          <a href="https://github.com/" target="_blank" rel="noreferrer" title="代码仓库"><Github size={14} /></a>
+          <a href="https://github.com/channely/greatlens" target="_blank" rel="noreferrer" title="代码仓库"><Github size={14} /></a>
           <Link to="/usage" title="用量"><BarChart3 size={14} /></Link>
           <Link to="/sync" title="同步"><CloudSync size={14} /></Link>
           <Link to="/settings" title="设置"><Sparkles size={14} /></Link>

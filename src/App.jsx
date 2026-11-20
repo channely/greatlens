@@ -2,8 +2,7 @@ import React from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import {
   Clapperboard, Home as HomeIcon, FolderOpen, Settings as SettingsIcon,
-  BarChart3, Images, FolderSync as CloudSync, Play, Github, BookOpen,
-  MessageCircle, CircleHelp, Sun, Moon,
+  BarChart3, Images, FolderSync as CloudSync, Sun, Moon,
 } from 'lucide-react';
 import { currentBackendBase } from './api.js';
 import { useTheme } from './theme.js';
@@ -16,7 +15,7 @@ import Usage from './pages/Usage.jsx';
 import Assets from './pages/Assets.jsx';
 import Sync from './pages/Sync.jsx';
 
-// 侧栏按工作动线分组；首页与全部装饰入口保留，形态不变。
+// 侧栏只保留真实可用的入口：工作动线分组 + 后端状态 + 主题切换。
 const NAV_GROUPS = [
   { label: '工作台', links: [
     { to: '/', label: '首页', icon: HomeIcon },
@@ -66,10 +65,6 @@ function Shell() {
 
         <div className="side-foot">
           <div className="side-foot-section">
-            <div className="side-video" title="创作灵感">
-              <span className="play"><Play size={15} fill="currentColor" /></span>
-              <span>灵感片段 · 00:15</span>
-            </div>
             <div className="side-backend" title={currentBackendBase()}><span className="status-dot" /> 后端：{source}</div>
           </div>
           <div className="side-foot-section side-foot-actions">
@@ -78,13 +73,6 @@ function Shell() {
                 {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
               </button>
             </div>
-            <Link to="/projects" className="btn btn-primary full side-login">Login</Link>
-            <div className="side-icons">
-              <a href="https://github.com/" target="_blank" rel="noreferrer" title="代码仓库"><Github size={15} /></a>
-              <Link to="/settings" title="使用说明"><BookOpen size={15} /></Link>
-              <Link to="/sync" title="协作反馈"><MessageCircle size={15} /></Link>
-              <Link to="/settings" title="设置"><CircleHelp size={15} /></Link>
-            </div>
           </div>
         </div>
       </aside>
@@ -92,7 +80,7 @@ function Shell() {
       <div className="main-area">
         <div className="news-bar">
           <span className="news-tag">News</span>
-          <span className="news-text">百炼 qwen4-max 已接入 · 图像 / 视频生成与用量看板上线 · 支持 FDX / Fountain 导入</span>
+          <span className="news-text">百炼 qwen4-max 已接入 · 图像 / 视频生成与用量看板上线 · 支持 FDX 剧本导入</span>
           <span className="news-right">{source} · 本地优先</span>
         </div>
         <div className="main-content">

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api.js';
 import LocationCanvas from '../components/LocationCanvas.jsx';
+import { EntityAssetField } from '../components/AssetPicker.jsx';
 
 const uid = () => `e_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -25,17 +26,26 @@ export function CastingView({ project, mutate, derived }) {
       {chars.length === 0 ? <div className="empty small">还没有角色。先写剧本里的角色提示，或在角色档案里新增。</div> : (
         <div className="table-wrap">
           <table className="data-table casting-table">
-            <thead><tr><th>角色</th><th>演员</th><th>年龄</th><th>性别</th><th>外形 / 造型</th><th>声音</th><th>戏份（场/集）</th><th>备注</th><th></th></tr></thead>
+            <thead><tr><th>角色</th><th>视觉</th><th>演员</th><th>年龄</th><th>性别</th><th>外形 / 造型</th><th>声音</th><th>人物弧光</th><th>戏份（场/集）</th><th>备注</th><th></th></tr></thead>
             <tbody>
               {chars.map((c, i) => {
                 const d = cueMap.get(String(c.name || '').toUpperCase());
                 return <tr key={c.id}>
                   <td><input value={c.name} placeholder="角色名" onChange={e => mutate((_, p) => { p.characters[i].name = e.target.value; })} /></td>
+                  <td><EntityAssetField
+                    label="形象"
+                    project={project}
+                    generation={{ purpose: 'casting', targetKind: 'character', targetId: c.id, slot: 'lookImage' }}
+                    binding={{ kind: 'character', projectId: project.id, entityId: c.id, slot: 'lookImage' }}
+                    value={c.lookImage}
+                    onChange={ref => mutate((_, p) => { p.characters[i].lookImage = ref; })}
+                  /></td>
                   <td><input value={c.actor || ''} placeholder="候选演员" onChange={e => mutate((_, p) => { p.characters[i].actor = e.target.value; })} /></td>
                   <td><input value={c.age || ''} onChange={e => mutate((_, p) => { p.characters[i].age = e.target.value; })} /></td>
                   <td><select value={c.gender || ''} onChange={e => mutate((_, p) => { p.characters[i].gender = e.target.value; })}><option value="">—</option><option>男</option><option>女</option><option>其他</option></select></td>
                   <td><textarea rows={1} value={c.look || ''} onChange={e => mutate((_, p) => { p.characters[i].look = e.target.value; })} /></td>
                   <td><textarea rows={1} value={c.voice || ''} onChange={e => mutate((_, p) => { p.characters[i].voice = e.target.value; })} /></td>
+                  <td><textarea rows={2} value={c.arc || ''} placeholder="起点 → 转折 → 终点" onChange={e => mutate((_, p) => { p.characters[i].arc = e.target.value; })} /></td>
                   <td className="muted">{d ? `${d.scenes.length} 场 / ${d.episodes.length} 集` : '—'}</td>
                   <td><textarea rows={1} value={c.notes || ''} onChange={e => mutate((_, p) => { p.characters[i].notes = e.target.value; })} /></td>
                   <td><button className="icon-btn danger" title="删除" onClick={() => mutate((_, p) => p.characters.splice(i, 1))}><Trash2 size={13} /></button></td>
@@ -137,7 +147,7 @@ export function RelationshipsView({ project, mutate }) {
 // ---------------------------------------------------------------------------
 export function LocationsPropsView({ project, mutate, derived }) {
   const [audit, setAudit] = useState(null);
-  const [locView, setLocView] = useState('table'); // table | canvas
+  const [locView, setLocView] = useState('table'); // table | canvas | scouting
   const locations = project.locations || [];
   const props = project.props || [];
   const derivedLocs = derived?.locations || [];
@@ -154,13 +164,42 @@ export function LocationsPropsView({ project, mutate, derived }) {
           <div className="loc-view-switch">
             <button className={locView === 'table' ? 'active' : ''} onClick={() => setLocView('table')}>表格</button>
             <button className={locView === 'canvas' ? 'active' : ''} onClick={() => setLocView('canvas')}>画布 / 分组</button>
+            <button className={locView === 'scouting' ? 'active' : ''} onClick={() => setLocView('scouting')}>勘景表</button>
           </div>
         </div>
         {derivedLocs.length > 0 && <div className="derived-hint"><span>剧本派生：</span>{derivedLocs.map((l, i) => <span className="tag mini" key={i}>{l.name}（{l.scenes.length} 场）</span>)}</div>}
-        {locView === 'canvas' ? <LocationCanvas project={project} mutate={mutate} derived={derived} /> : <div className="table-wrap"><table className="data-table">
-          <thead><tr><th>故事地点</th><th>实拍地点 / 棚</th><th>可达性</th><th>时间</th><th>天气</th><th>光线</th><th>声音</th><th>备注</th><th></th></tr></thead>
+        {locView === 'canvas' ? <LocationCanvas project={project} mutate={mutate} derived={derived} /> : locView === 'scouting' ? (
+          <div className="scouting-sheet">
+            <p className="muted small">勘景表按地点汇总实拍信息，供踩点与制片核对；数据仍从同一地点实体读写。</p>
+            {locations.length === 0 ? <div className="empty small">还没有登记地点。</div> : locations.map((l, i) => (
+              <div className="scouting-card" key={l.id}>
+                <div className="scouting-card-head"><strong>{l.name || `地点 ${i + 1}`}</strong>
+                  {derivedLocs.find(d => d.name === l.name) && <span className="tag mini">剧本派生 · {derivedLocs.find(d => d.name === l.name).scenes.length} 场</span>}
+                </div>
+                <div className="scouting-grid">
+                  <label>实拍地点 / 棚<input value={l.shooting || ''} onChange={e => mutate((_, p) => { p.locations[i].shooting = e.target.value; })} /></label>
+                  <label>可达性<input value={l.access || ''} onChange={e => mutate((_, p) => { p.locations[i].access = e.target.value; })} /></label>
+                  <label>时间<input value={l.time || ''} onChange={e => mutate((_, p) => { p.locations[i].time = e.target.value; })} /></label>
+                  <label>天气<input value={l.weather || ''} onChange={e => mutate((_, p) => { p.locations[i].weather = e.target.value; })} /></label>
+                  <label>光线<input value={l.light || ''} onChange={e => mutate((_, p) => { p.locations[i].light = e.target.value; })} /></label>
+                  <label>声音<input value={l.sound || ''} onChange={e => mutate((_, p) => { p.locations[i].sound = e.target.value; })} /></label>
+                  <label className="scouting-wide">备注<textarea rows={2} value={l.notes || ''} onChange={e => mutate((_, p) => { p.locations[i].notes = e.target.value; })} /></label>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : <div className="table-wrap"><table className="data-table">
+          <thead><tr><th>故事地点</th><th>视觉</th><th>实拍地点 / 棚</th><th>可达性</th><th>时间</th><th>天气</th><th>光线</th><th>声音</th><th>备注</th><th></th></tr></thead>
           <tbody>{locations.map((l, i) => <tr key={l.id}>
             <td><input value={l.name} placeholder="地点名" onChange={e => mutate((_, p) => { p.locations[i].name = e.target.value; })} /></td>
+            <td><EntityAssetField
+              label="场景"
+              project={project}
+              generation={{ purpose: 'scene', targetKind: 'location', targetId: l.id, slot: 'lookImage' }}
+              binding={{ kind: 'location', projectId: project.id, entityId: l.id, slot: 'lookImage' }}
+              value={l.lookImage}
+              onChange={ref => mutate((_, p) => { p.locations[i].lookImage = ref; })}
+            /></td>
             <td><input value={l.shooting || ''} onChange={e => mutate((_, p) => { p.locations[i].shooting = e.target.value; })} /></td>
             <td><input value={l.access || ''} onChange={e => mutate((_, p) => { p.locations[i].access = e.target.value; })} /></td>
             <td><input value={l.time || ''} onChange={e => mutate((_, p) => { p.locations[i].time = e.target.value; })} /></td>
@@ -178,9 +217,17 @@ export function LocationsPropsView({ project, mutate, derived }) {
           <button className="btn btn-ghost sm" onClick={() => mutate((_, p) => p.props.push({ id: uid(), name: '', purpose: '', introduced: '', carrier: '', states: '', continuity: '', constraint: '' }))}><Plus size={13} /> 添加道具</button>
         </div>
         <div className="table-wrap"><table className="data-table">
-          <thead><tr><th>物件</th><th>戏剧作用</th><th>首次出现</th><th>持有人</th><th>可见状态</th><th>连续性要求</th><th>制作约束</th><th></th></tr></thead>
+          <thead><tr><th>物件</th><th>视觉</th><th>戏剧作用</th><th>首次出现</th><th>持有人</th><th>可见状态</th><th>连续性要求</th><th>制作约束</th><th></th></tr></thead>
           <tbody>{props.map((p0, i) => <tr key={p0.id}>
             <td><input value={p0.name} placeholder="道具名" onChange={e => mutate((_, p) => { p.props[i].name = e.target.value; })} /></td>
+            <td><EntityAssetField
+              label="外观"
+              project={project}
+              generation={{ purpose: 'prop', targetKind: 'prop', targetId: p0.id, slot: 'lookImage' }}
+              binding={{ kind: 'prop', projectId: project.id, entityId: p0.id, slot: 'lookImage' }}
+              value={p0.lookImage}
+              onChange={ref => mutate((_, p) => { p.props[i].lookImage = ref; })}
+            /></td>
             <td><textarea rows={1} value={p0.purpose || ''} onChange={e => mutate((_, p) => { p.props[i].purpose = e.target.value; })} /></td>
             <td><input value={p0.introduced || ''} onChange={e => mutate((_, p) => { p.props[i].introduced = e.target.value; })} /></td>
             <td><input value={p0.carrier || ''} onChange={e => mutate((_, p) => { p.props[i].carrier = e.target.value; })} /></td>

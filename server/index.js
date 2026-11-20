@@ -4,15 +4,36 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db, settings, usage, uid, makeProject, ASSETS_DIR, ROOT, ADVISORS, knowledgeIndex, searchKnowledge } from './store.js';
+import { stableHash } from './migrations.js';
+import { planIdeaStage, createProjectFromIdea, analyzeBrief } from './idea.js';
+import { applyStartTemplate, START_TEMPLATES } from './templates.js';
+import { act as aiAct } from './scriptDoctor.js';
+import {
+  getTaste, recordFeedback, addRule, removeRule, setTasteEnabled,
+} from './taste.js';
+import {
+  proposeOptions, applyOption, addRevisionNote, listRevisions,
+} from './revisions.js';
+import {
+  listVersions, getVersion, createVersion, updateVersion, deleteVersion,
+  restoreVersion, autoVersionForSave,
+} from './versions.js';
 import { callModel } from './ai.js';
 import { parseScreenplay } from './fdx.js';
 import { deriveEntities, analyzeRelationships, auditContinuity, auditReadiness } from './entities.js';
 import {
-  generateImage, generateVideo, pollTask, listAssets, removeAsset,
+  generateImage, generateVideo, pollTask, listTasks, listAssets, removeAsset,
+  refundTask, refundTaskCharges,
 } from './media.js';
+import { uploadAsset } from './assets.js';
+import { createGeneration } from './generation.js';
+import { planAudio, generateAudio } from './audio.js';
+import { bindAsset, unbindAsset, listProjectAssets } from './bindings.js';
 import { syncStatus, configureSync, pushSync, pullSync } from './sync.js';
 import { exportRender } from './export.js';
+import { convertScriptToCinema } from './toCinema.js';
 import { parseAttachment, supportedExtensions } from './attachments.js';
+import { modelCatalog, normalizeResolution } from './models.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -43,27 +64,45 @@ const wrap = fn => (req, res) => {
 
 // ---------- settings ----------
 app.get('/api/settings', (_req, res) => res.json(settings.public()));
+const NUMERIC_SETTINGS = [
+  'temperature', 'priceInput', 'priceOutput',
+  'imageGenPrice', 'imageInputPrice', 'videoPrice480P', 'videoPrice720P', 'videoPrice1080P', 'videoDiscount',
+  'audioPriceInput', 'audioPriceOutput',
+];
+const ALLOWED_SETTINGS = [
+  'baseUrl', 'apiKey', 'model', 'temperature', 'enableThinking',
+  'priceInput', 'priceOutput', 'imageGenPrice', 'imageInputPrice',
+  'videoPrice480P', 'videoPrice720P', 'videoPrice1080P', 'videoDiscount',
+  'mediaBaseUrl', 'imageModel', 'videoModel', 'videoResolution',
+  'workspaceId', 'audioModel',
+  'syncRemote', 'syncToken', 'syncDevice', 'remoteBase',
+];
 app.put('/api/settings', (req, res) => {
-  const allowed = [
-    'baseUrl', 'apiKey', 'model', 'temperature', 'enableThinking',
-    'priceInput', 'priceOutput', 'imageUnitPrice', 'videoUnitPrice', 'mediaBaseUrl', 'imageModel', 'videoModel',
-    'syncRemote', 'syncToken', 'syncDevice', 'remoteBase',
-  ];
   const patch = {};
-  for (const k of allowed) {
+  for (const k of ALLOWED_SETTINGS) {
     const v = req.body?.[k];
     // 前端回传的掩码（***abcd）不能覆盖真实密钥
     if (v === undefined || (typeof v === 'string' && /^\*{2,}/.test(v))) continue;
     patch[k] = k === 'enableThinking' ? (v === true || v === 'true' || v === 1)
-      : ['temperature', 'priceInput', 'priceOutput', 'imageUnitPrice', 'videoUnitPrice'].includes(k) ? Number(v)
+      : NUMERIC_SETTINGS.includes(k) ? Number(v)
       : String(v);
+  }
+  // 分辨率只接受 480P / 720P / 1080P；折扣钳制到 0.01–1。
+  if (patch.videoResolution) patch.videoResolution = normalizeResolution(patch.videoResolution);
+  if (patch.videoDiscount !== undefined) {
+    const d = Number(patch.videoDiscount);
+    patch.videoDiscount = Number.isFinite(d) ? Math.max(0.01, Math.min(1, d)) : 1;
   }
   if (Object.keys(patch).length) settings.set(patch);
   res.json(settings.public());
 });
 
+// 模型目录与计费口径（单一事实来源，供前端下拉与价格展示）
+app.get('/api/models', (_req, res) => res.json(modelCatalog()));
+
 // ---------- usage & billing ----------
 app.get('/api/usage', (req, res) => res.json(usage.report(Number(req.query.days) || 30)));
+app.get('/api/usage/refunds', (_req, res) => res.json(usage.refunds()));
 app.post('/api/usage/clear', (_req, res) => { usage.clear(); res.json({ ok: true }); });
 
 // ---------- projects ----------
@@ -72,10 +111,18 @@ app.get('/api/projects', (_req, res) => {
   res.json(d.projects.map(({ episodes, ...p }) => ({ ...p, episodeCount: episodes?.length || 0 })));
 });
 
+app.get('/api/project-templates', (_req, res) => res.json(START_TEMPLATES));
+
+// Script → Cinema 一次性显式转换（peer 类型，不往返合并，源项目保持不变）。
+app.post('/api/projects/:id/to-cinema', wrap(async (req, res) => {
+  const converted = convertScriptToCinema({ sourceId: req.params.id, name: req.body?.name || '' });
+  res.status(201).json(converted);
+}));
+
 app.post('/api/projects', (req, res) => {
-  const { type = 'script', name = '未命名项目' } = req.body || {};
+  const { type = 'script', name = '未命名项目', template } = req.body || {};
   if (!['script', 'cinema'].includes(type)) return res.status(400).json({ error: 'invalid type' });
-  const p = makeProject(type, name);
+  const p = applyStartTemplate(makeProject(type, name), template);
   db.update(d => { d.projects.unshift(p); });
   res.status(201).json(p);
 });
@@ -86,16 +133,98 @@ app.get('/api/projects/:id', (req, res) => {
   res.json(p);
 });
 
-app.put('/api/projects/:id', (req, res) => {
-  const d = db.all();
-  const idx = d.projects.findIndex(x => x.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: 'not found' });
-  const patch = { ...req.body, id: d.projects[idx].id, updatedAt: new Date().toISOString() };
-  delete patch.createdAt;
-  d.projects[idx] = { ...d.projects[idx], ...patch };
-  db.save(d);
-  res.json(d.projects[idx]);
-});
+app.put('/api/projects/:id', wrap(async (req, res) => {
+  const rawMatch = req.headers['if-match'] ?? req.body?.baseRevision;
+  const baseRevision = rawMatch === undefined || rawMatch === null || rawMatch === ''
+    ? undefined
+    : Number(String(rawMatch).replace(/^"|"$/g, ''));
+
+  const saved = db.update(d => {
+    const idx = d.projects.findIndex(x => x.id === req.params.id);
+    if (idx < 0) throw Object.assign(new Error('not found'), { status: 404 });
+    const before = d.projects[idx];
+    if (Number.isFinite(baseRevision) && baseRevision !== Number(before.revision || 1)) {
+      throw Object.assign(
+        new Error(`项目已被其他会话更新（当前 r${before.revision || 1}，请求基于 r${baseRevision}）。请刷新后再编辑。`),
+        { status: 409 },
+      );
+    }
+    const patch = { ...req.body, id: before.id };
+    delete patch.createdAt;
+    delete patch.revision;
+    delete patch.versionHash;
+    delete patch.baseRevision;
+    patch.updatedAt = new Date().toISOString();
+
+    const after = { ...before, ...patch };
+    after.revision = Number(before.revision || 1) + 1;
+    after.versionHash = stableHash(after);
+    autoVersionForSave(d, before, after);
+    d.projects[idx] = after;
+    return after;
+  });
+  res.json(saved);
+}));
+
+// 项目设置：与导出弹窗共用同一 project.settings，不维护第二份状态。
+app.patch('/api/projects/:id/settings', wrap(async (req, res) => {
+  const baseRevision = req.body?.baseRevision;
+  const saved = db.update(d => {
+    const idx = d.projects.findIndex(x => x.id === req.params.id);
+    if (idx < 0) throw Object.assign(new Error('not found'), { status: 404 });
+    const before = d.projects[idx];
+    if (baseRevision !== undefined && baseRevision !== null && Number(baseRevision) !== Number(before.revision || 1)) {
+      throw Object.assign(new Error('项目已被其他会话更新，请刷新后再保存设置。'), { status: 409 });
+    }
+    const patch = { ...before, settings: { ...(before.settings || {}), ...(req.body?.settings || {}) } };
+    if (req.body?.name !== undefined) patch.name = String(req.body.name || '').trim() || before.name;
+    if (req.body?.logline !== undefined) patch.logline = String(req.body.logline || '');
+    if (req.body?.synopsis !== undefined) patch.synopsis = String(req.body.synopsis || '');
+    if (req.body?.cover !== undefined) patch.cover = { ...(before.cover || {}), ...(req.body.cover || {}) };
+    if (req.body?.advisorId !== undefined) {
+      const aid = String(req.body.advisorId || '');
+      if (aid && !ADVISORS.some(a => a.id === aid)) throw Object.assign(new Error('未知顾问'), { status: 400 });
+      patch.advisorId = aid; // 与工作台「顾问视角」共享同一字段
+    }
+    patch.revision = Number(before.revision || 1) + 1;
+    patch.updatedAt = new Date().toISOString();
+    patch.versionHash = stableHash(patch);
+    autoVersionForSave(d, before, patch);
+    d.projects[idx] = patch;
+    return patch;
+  });
+  res.json(saved);
+}));
+
+// ---------- idea-first ----------
+app.post('/api/ai/idea', wrap(async (req, res) => res.json(planIdeaStage(req.body || {}))));
+// brief 专业分析填充：把一句话 seed 解构成六字段，用户可再改。模型失败自动回退本地。
+app.post('/api/ai/idea/brief', wrap(async (req, res) => {
+  const { seed, brief } = req.body || {};
+  res.json(await analyzeBrief(seed, brief || {}));
+}));
+app.post('/api/projects/from-idea', wrap(async (req, res) => {
+  const result = createProjectFromIdea(req.body || {});
+  res.status(result.created ? 201 : 200).json(result);
+}));
+
+// ---------- project versions ----------
+app.get('/api/projects/:id/versions', wrap(async (req, res) => res.json(listVersions(req.params.id))));
+app.post('/api/projects/:id/versions', wrap(async (req, res) => {
+  res.status(201).json(createVersion(req.params.id, req.body || {}));
+}));
+app.get('/api/projects/:id/versions/:versionId', wrap(async (req, res) => {
+  res.json(getVersion(req.params.id, req.params.versionId));
+}));
+app.patch('/api/projects/:id/versions/:versionId', wrap(async (req, res) => {
+  res.json(updateVersion(req.params.id, req.params.versionId, req.body || {}));
+}));
+app.delete('/api/projects/:id/versions/:versionId', wrap(async (req, res) => {
+  res.json(deleteVersion(req.params.id, req.params.versionId));
+}));
+app.post('/api/projects/:id/versions/:versionId/restore', wrap(async (req, res) => {
+  res.json(restoreVersion(req.params.id, req.params.versionId, req.body?.baseRevision));
+}));
 
 app.delete('/api/projects/:id', (req, res) => {
   db.update(d => { d.projects = d.projects.filter(x => x.id !== req.params.id); });
@@ -140,6 +269,22 @@ app.post('/api/ai/complete', wrap(async (req, res) => {
   const r = await callModel(req.body);
   res.json({ text: r.text, reasoning: r.reasoning, usage: r.usage });
 }));
+
+// 结构化 AI 动作 / Script Doctor：默认只给提案，显式 apply 才写入项目。
+app.post('/api/ai/act', wrap(async (req, res) => res.json(aiAct(req.body || {}))));
+
+// ---------- 作者口味记忆 ----------
+app.get('/api/projects/:id/taste', wrap(async (req, res) => res.json(getTaste(req.params.id))));
+app.post('/api/projects/:id/taste/feedback', wrap(async (req, res) => res.json(recordFeedback(req.params.id, req.body || {}))));
+app.post('/api/projects/:id/taste/rules', wrap(async (req, res) => res.status(201).json(addRule(req.params.id, req.body || {}))));
+app.delete('/api/projects/:id/taste/rules/:ruleId', wrap(async (req, res) => res.json(removeRule(req.params.id, req.params.ruleId))));
+app.patch('/api/projects/:id/taste', wrap(async (req, res) => res.json(setTasteEnabled(req.params.id, req.body?.enabled))));
+
+// ---------- 草稿级修订说明 + Option 备选 ----------
+app.post('/api/projects/:id/revisions/options', wrap(async (req, res) => res.json(proposeOptions({ ...req.body, projectId: req.params.id }))));
+app.post('/api/projects/:id/revisions/apply', wrap(async (req, res) => res.json(applyOption({ ...req.body, projectId: req.params.id }))));
+app.post('/api/projects/:id/revisions/notes', wrap(async (req, res) => res.json(addRevisionNote({ ...req.body, projectId: req.params.id }))));
+app.get('/api/projects/:id/revisions', wrap(async (req, res) => res.json(listRevisions({ projectId: req.params.id, episodeId: req.query.episodeId }))));
 
 // ---------- FDX / Fountain import ----------
 app.post('/api/import/fdx', wrap(async (req, res) => {
@@ -193,8 +338,25 @@ app.post('/api/import/attachment', wrap(async (req, res) => {
 app.post('/api/media/image', wrap(async (req, res) => res.json(await generateImage(req.body))));
 app.post('/api/media/video', wrap(async (req, res) => res.json(await generateVideo(req.body))));
 app.get('/api/media/task/:taskId', wrap(async (req, res) => res.json(await pollTask(req.params.taskId))));
+app.post('/api/media/task/:taskId/refund', wrap(async (req, res) => res.json(refundTask(req.params.taskId, req.body?.reason))));
+app.get('/api/media/tasks', (req, res) => res.json(listTasks(req.query.limit)));
 app.get('/api/media/assets', (req, res) => res.json(listAssets(req.query.type)));
+app.post('/api/media/audio', wrap(async (req, res) => res.json(await generateAudio(req.body))));
+app.post('/api/projects/:id/audio/plan', wrap(async (req, res) => {
+  const p = db.all().projects.find(x => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  res.json(planAudio(p, req.body || {}));
+}));
+app.post('/api/media/assets/upload', wrap(async (req, res) => res.status(201).json(uploadAsset(req.body))));
+app.put('/api/media/assets/:assetId/binding', wrap(async (req, res) => {
+  res.json(bindAsset(req.params.assetId, req.body?.binding || req.body, req.body?.note || ''));
+}));
+app.delete('/api/media/assets/:assetId/binding', wrap(async (req, res) => {
+  res.json(unbindAsset(req.params.assetId, req.body?.binding || req.query));
+}));
 app.delete('/api/media/assets/:id', (req, res) => res.json(removeAsset(req.params.id)));
+app.get('/api/projects/:id/assets', wrap(async (req, res) => res.json(listProjectAssets(req.params.id))));
+app.post('/api/projects/:id/generations', wrap(async (req, res) => res.json(await createGeneration(req.params.id, req.body || {}))));
 app.use('/media', express.static(ASSETS_DIR, { fallthrough: true, maxAge: '7d' }));
 
 // ---------- sync ----------

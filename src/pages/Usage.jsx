@@ -23,11 +23,12 @@ export default function Usage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [clearing, setClearing] = useState(false);
+  const [refunds, setRefunds] = useState([]);
 
   const load = () => {
     setLoading(true);
-    api.usage.get(30)
-      .then(d => { setData(d); setError(''); })
+    Promise.all([api.usage.get(30), api.usage.refunds()])
+      .then(([d, r]) => { setData(d); setRefunds(Array.isArray(r) ? r : (r?.items || [])); setError(''); })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   };
@@ -38,7 +39,8 @@ export default function Usage() {
     setClearing(true);
     try {
       await api.usage.clear();
-      await api.usage.get(30).then(setData);
+      const [d, r] = await Promise.all([api.usage.get(30), api.usage.refunds()]);
+      setData(d); setRefunds(Array.isArray(r) ? r : (r?.items || []));
     } catch (e) { setError(e.message); }
     finally { setClearing(false); }
   }
@@ -151,9 +153,24 @@ export default function Usage() {
                     <td>{r.scope || '—'}</td>
                     <td>{num(r.promptTokens)}</td>
                     <td>{num(r.completionTokens)}</td>
-                    <td className="accent">{money(r.cost)}</td>
+                    <td className="accent" title={r.detail?.note || ''}>{money(r.cost)}</td>
                   </tr>)}
                 </tbody>
+              </table></div>
+            )}
+          </section>
+
+          <section className="card usage-section">
+            <div className="card-head"><Coins size={18} /><div><h3>冲正记录</h3><p>失败任务与作废资产的幂等退款，按净额抵扣，不计入调用次数。</p></div></div>
+            {refunds.length === 0 ? <div className="empty small">暂无冲正记录。</div> : (
+              <div className="table-wrap"><table className="data-table recent-table">
+                <thead><tr><th>时间</th><th>幂等键</th><th>说明</th><th>抵扣</th></tr></thead>
+                <tbody>{refunds.map((r, i) => <tr key={r.id || i}>
+                  <td className="nowrap">{shortDate(r.ts)}</td>
+                  <td><code>{r.refundKey || '—'}</code></td>
+                  <td>{r.note || r.reason || '—'}</td>
+                  <td className="accent">{money(r.cost)}</td>
+                </tr>)}</tbody>
               </table></div>
             )}
           </section>

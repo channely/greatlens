@@ -4,6 +4,7 @@ data/settings.json
 data/db.json
 data/assets/
 data/backups/
+data/versions/
 data/.sync/
 *.log
 .DS_Store

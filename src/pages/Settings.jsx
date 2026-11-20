@@ -13,12 +13,30 @@ const DEFAULTS = {
   enableThinking: true,
   priceInput: 10,
   priceOutput: 30,
-  imageUnitPrice: 0.2,
-  videoUnitPrice: 0.5,
+  imageGenPrice: 0.18,
+  imageInputPrice: 0.02,
+  videoPrice480P: 0.3,
+  videoPrice720P: 0.6,
+  videoPrice1080P: 1.2,
+  videoDiscount: 0.7,
+  audioPriceInput: 6,
+  audioPriceOutput: 12,
+  workspaceId: '',
+  audioModel: 'qwen-audio-3.1-tts-next',
   mediaBaseUrl: 'https://dashscope.aliyuncs.com/api/v1',
-  imageModel: 'qwen-image-3.0-pro',
-  videoModel: 'wan2.7-t2v',
+  imageModel: 'qwen-image-3.0',
+  videoModel: 'wan3.0-video',
+  videoResolution: '480P',
   remoteBase: '',
+};
+
+const IMAGE_MODELS = ['qwen-image-3.0', 'qwen-image-3.0-pro', 'qwen-image-2.1-turbo', 'wanx2.1-t2i-plus'];
+const VIDEO_MODELS = ['wan3.0-video', 'wan2.7-t2v', 'wan2.7-i2v'];
+const RESOLUTIONS = ['480P', '720P', '1080P'];
+
+const DOCS = {
+  image: 'https://docs.bailian.console.aliyun.com/zh/model-studio/qwen-image-generation-and-editing-api-reference',
+  video: 'https://docs.bailian.console.aliyun.com/zh/model-studio/wan3-video-generation-api-reference',
 };
 
 export default function Settings() {
@@ -37,8 +55,9 @@ export default function Settings() {
         next.temperature = Number.isFinite(Number(next.temperature)) ? Number(next.temperature) : 0.8;
         next.priceInput = Number.isFinite(Number(next.priceInput)) ? Number(next.priceInput) : 10;
         next.priceOutput = Number.isFinite(Number(next.priceOutput)) ? Number(next.priceOutput) : 30;
-        next.imageUnitPrice = Number.isFinite(Number(next.imageUnitPrice)) ? Number(next.imageUnitPrice) : 0.2;
-        next.videoUnitPrice = Number.isFinite(Number(next.videoUnitPrice)) ? Number(next.videoUnitPrice) : 0.5;
+        for (const k of ['imageGenPrice', 'imageInputPrice', 'videoPrice480P', 'videoPrice720P', 'videoPrice1080P', 'videoDiscount', 'audioPriceInput', 'audioPriceOutput']) {
+          next[k] = Number.isFinite(Number(next[k])) ? Number(next[k]) : DEFAULTS[k];
+        }
         next.enableThinking = Boolean(next.enableThinking);
         next.remoteBase = next.remoteBase || '';
         initialRef.current = next;
@@ -80,7 +99,7 @@ export default function Settings() {
       <div className="page-head">
         <div>
           <h1>模型与计费</h1>
-          <p className="muted">配置阿里百炼模型与本地估算单价。API Key 只保存在本机，前端只显示掩码。</p>
+          <p className="muted">配置百炼模型与本地估算单价：图像按张、视频按秒（480P / 720P / 1080P 分档，最长 30 秒）。API Key 只保存在本机。</p>
         </div>
       </div>
       {error && <div className="alert error">{error}</div>}
@@ -118,42 +137,98 @@ export default function Settings() {
 
         <div className="settings-side">
           <section className="card">
-            <div className="card-head"><Coins size={18} /><div><h3>计费单价</h3><p>每百万 token 的人民币价格。</p></div></div>
+            <div className="card-head"><Coins size={18} /><div><h3>计费单价</h3><p>token 按百万计；图像按张；视频按秒、随分辨率分档。</p></div></div>
             <div className="form-stack">
-              <label>输入单价（¥ / 百万 token）
-                <input type="number" min="0" step="0.1" value={cfg.priceInput} onChange={e => set('priceInput', Number(e.target.value))} />
-              </label>
-              <label>输出单价（¥ / 百万 token）
-                <input type="number" min="0" step="0.1" value={cfg.priceOutput} onChange={e => set('priceOutput', Number(e.target.value))} />
-              </label>
-              <label>图像生成（¥ / 张）
-                <input type="number" min="0" step="0.01" value={cfg.imageUnitPrice} onChange={e => set('imageUnitPrice', Number(e.target.value))} />
-              </label>
-              <label>视频生成（¥ / 次）
-                <input type="number" min="0" step="0.01" value={cfg.videoUnitPrice} onChange={e => set('videoUnitPrice', Number(e.target.value))} />
-              </label>
-              <p className="muted small">输入 / 输出单价为 qwen4-max 北京区参考值（思维链与回答均计入输出）。图像 / 视频按次估算。仅用于本地估算，实际以阿里云账单为准，可自行修改。</p>
+              <div className="billing-group">
+                <div className="billing-group-title">文本 · qwen4-max</div>
+                <div className="form-two">
+                  <label>输入（¥ / 百万 token）
+                    <input type="number" min="0" step="0.1" value={cfg.priceInput} onChange={e => set('priceInput', Number(e.target.value))} />
+                  </label>
+                  <label>输出（¥ / 百万 token）
+                    <input type="number" min="0" step="0.1" value={cfg.priceOutput} onChange={e => set('priceOutput', Number(e.target.value))} />
+                  </label>
+                </div>
+              </div>
+              <div className="billing-group">
+                <div className="billing-group-title">图像 · 按张</div>
+                <div className="form-two">
+                  <label>生成（¥ / 张）
+                    <input type="number" min="0" step="0.01" value={cfg.imageGenPrice} onChange={e => set('imageGenPrice', Number(e.target.value))} />
+                  </label>
+                  <label>输入图（¥ / 张）
+                    <input type="number" min="0" step="0.01" value={cfg.imageInputPrice} onChange={e => set('imageInputPrice', Number(e.target.value))} />
+                  </label>
+                </div>
+                <p className="muted small">1K 与 2K 同价。图生图时输入图按张另计。</p>
+              </div>
+              <div className="billing-group">
+                <div className="billing-group-title">视频 · 按秒（由输出分辨率决定单价）</div>
+                <div className="form-three">
+                  <label>480P（¥ / 秒）
+                    <input type="number" min="0" step="0.01" value={cfg.videoPrice480P} onChange={e => set('videoPrice480P', Number(e.target.value))} />
+                  </label>
+                  <label>720P（¥ / 秒）
+                    <input type="number" min="0" step="0.01" value={cfg.videoPrice720P} onChange={e => set('videoPrice720P', Number(e.target.value))} />
+                  </label>
+                  <label>1080P（¥ / 秒）
+                    <input type="number" min="0" step="0.01" value={cfg.videoPrice1080P} onChange={e => set('videoPrice1080P', Number(e.target.value))} />
+                  </label>
+                </div>
+                <label className="mt-8">折扣系数（限时 7 折填 0.7，无折扣填 1）
+                  <input type="number" min="0.01" max="1" step="0.05" value={cfg.videoDiscount} onChange={e => set('videoDiscount', Number(e.target.value))} />
+                </label>
+                <p className="muted small">输入视频与输出视频均按秒计费，单价取输出分辨率对应档。单条最长 30 秒。折后单价：480P ¥{(cfg.videoPrice480P * cfg.videoDiscount).toFixed(3)}/s · 720P ¥{(cfg.videoPrice720P * cfg.videoDiscount).toFixed(3)}/s · 1080P ¥{(cfg.videoPrice1080P * cfg.videoDiscount).toFixed(3)}/s。</p>
+              </div>
+              <div className="billing-group">
+                <div className="billing-group-title">音频 · 按 Token（北京地域）</div>
+                <div className="form-two">
+                  <label>输入（¥ / 百万 Token）
+                    <input type="number" min="0" step="0.5" value={cfg.audioPriceInput} onChange={e => set('audioPriceInput', Number(e.target.value))} />
+                  </label>
+                  <label>输出（¥ / 百万 Token）
+                    <input type="number" min="0" step="0.5" value={cfg.audioPriceOutput} onChange={e => set('audioPriceOutput', Number(e.target.value))} />
+                  </label>
+                </div>
+                <p className="muted small">只有接口返回可计费 Token 时才精确记账；未返回时标「未知」，不用音频时长冒充 Token。</p>
+              </div>
+              <p className="muted small">以上为本地估算，实际以阿里云账单为准，可自行修改。</p>
             </div>
           </section>
 
           <section className="card">
-            <div className="card-head"><ImageIcon size={18} /><div><h3>图像与视频</h3><p>百炼 Wanx / Wan 系列多模态模型。</p></div></div>
+            <div className="card-head"><ImageIcon size={18} /><div><h3>图像与视频</h3><p>默认 qwen-image-3.0 出图、wan3.0-video 出片（最长 30 秒，默认 480P）。</p></div></div>
             <div className="form-stack">
               <label>Media Base URL
                 <input value={cfg.mediaBaseUrl || ''} onChange={e => set('mediaBaseUrl', e.target.value)} placeholder={DEFAULTS.mediaBaseUrl} />
               </label>
               <label>图像模型
-                <input list="gl-image-model-list" value={cfg.imageModel || ''} onChange={e => set('imageModel', e.target.value)} placeholder="qwen-image-3.0-pro" />
-                <datalist id="gl-image-model-list">
-                  {['qwen-image-3.0-pro', 'qwen-image-2.1-turbo', 'wanx2.1-t2i-plus'].map(m => <option key={m} value={m} />)}
-                </datalist>
+                <select value={cfg.imageModel || ''} onChange={e => set('imageModel', e.target.value)}>
+                  {IMAGE_MODELS.map(m => <option key={m} value={m}>{m}{m === 'qwen-image-3.0' ? '（默认）' : ''}</option>)}
+                </select>
               </label>
               <label>视频模型
-                <input list="gl-video-model-list" value={cfg.videoModel || ''} onChange={e => set('videoModel', e.target.value)} placeholder="wan2.7-t2v" />
-                <datalist id="gl-video-model-list">
-                  {['wan2.7-t2v', 'wan2.6-t2v-flash', 'wan2.7-i2v'].map(m => <option key={m} value={m} />)}
-                </datalist>
+                <select value={cfg.videoModel || ''} onChange={e => set('videoModel', e.target.value)}>
+                  {VIDEO_MODELS.map(m => <option key={m} value={m}>{m}{m === 'wan3.0-video' ? '（默认）' : ''}</option>)}
+                </select>
               </label>
+              <label>视频默认分辨率
+                <select value={cfg.videoResolution || '480P'} onChange={e => set('videoResolution', e.target.value)}>
+                  {RESOLUTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </label>
+              <label>音频模型
+                <select value={cfg.audioModel || 'qwen-audio-3.1-tts-next'} onChange={e => set('audioModel', e.target.value)}>
+                  <option value="qwen-audio-3.1-tts-next">qwen-audio-3.1-tts-next（默认）</option>
+                </select>
+              </label>
+              <label>百炼 WorkspaceId（音频同步接口域名）
+                <input value={cfg.workspaceId || ''} onChange={e => set('workspaceId', e.target.value)} placeholder="用于 {WorkspaceId}.cn-beijing.maas.aliyuncs.com" />
+              </label>
+              <div className="model-doc-links">
+                <a href={DOCS.image} target="_blank" rel="noreferrer">Qwen-Image-3.0 文档 ↗</a>
+                <a href={DOCS.video} target="_blank" rel="noreferrer">wan3.0-video 文档 ↗</a>
+              </div>
             </div>
           </section>
 

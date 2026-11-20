@@ -2,15 +2,24 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import {
+  DEFAULT_IMAGE_MODEL, DEFAULT_VIDEO_MODEL, DEFAULT_VIDEO_RESOLUTION,
+  DEFAULT_AUDIO_MODEL, PRICING_DEFAULTS,
+} from './models.js';
+import { migrateDb, stableHash, CURRENT_SCHEMA_VERSION } from './migrations.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.join(__dirname, '..');
-export const DATA_DIR = path.join(ROOT, 'data');
+// GL_DATA_DIR 用于测试隔离与自托管迁移；默认仍是工程内 data/。
+export const DATA_DIR = process.env.GL_DATA_DIR
+  ? path.resolve(process.env.GL_DATA_DIR)
+  : path.join(ROOT, 'data');
 export const ASSETS_DIR = path.join(DATA_DIR, 'assets');
 export const DB_PATH = path.join(DATA_DIR, 'db.json');
 export const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
 
 // 百炼华北2（北京）：qwen4-max 输入 ¥10/百万 token，输出 ¥30/百万 token（思维链计入输出）
+// 图像 / 视频单价与模型默认值统一来自 models.js（单一事实来源）。
 const DEFAULT_SETTINGS = {
   baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   apiKey: '',
@@ -19,11 +28,20 @@ const DEFAULT_SETTINGS = {
   enableThinking: true,
   priceInput: 10,
   priceOutput: 30,
-  imageUnitPrice: 0.2,
-  videoUnitPrice: 0.5,
+  imageGenPrice: PRICING_DEFAULTS.imageGenPrice,
+  imageInputPrice: PRICING_DEFAULTS.imageInputPrice,
+  videoPrice480P: PRICING_DEFAULTS.videoPrice480P,
+  videoPrice720P: PRICING_DEFAULTS.videoPrice720P,
+  videoPrice1080P: PRICING_DEFAULTS.videoPrice1080P,
+  videoDiscount: PRICING_DEFAULTS.videoDiscount,
+  audioPriceInput: PRICING_DEFAULTS.audioPriceInput,
+  audioPriceOutput: PRICING_DEFAULTS.audioPriceOutput,
+  workspaceId: '',
+  audioModel: DEFAULT_AUDIO_MODEL,
   mediaBaseUrl: 'https://dashscope.aliyuncs.com/api/v1',
-  imageModel: 'qwen-image-3.0-pro',
-  videoModel: 'wan2.7-t2v',
+  imageModel: DEFAULT_IMAGE_MODEL,
+  videoModel: DEFAULT_VIDEO_MODEL,
+  videoResolution: DEFAULT_VIDEO_RESOLUTION,
   syncRemote: '',
   syncToken: '',
   syncDevice: '',
@@ -44,13 +62,10 @@ function write(file, data) {
 function ensure() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.mkdirSync(ASSETS_DIR, { recursive: true });
-  if (!fs.existsSync(DB_PATH)) write(DB_PATH, { projects: [], tasks: [], usage: [], assets: [] });
-  const d = read(DB_PATH) || {};
-  let changed = false;
-  for (const k of ['projects', 'tasks', 'usage', 'assets']) {
-    if (!Array.isArray(d[k])) { d[k] = []; changed = true; }
-  }
-  if (changed) write(DB_PATH, d);
+  const existed = fs.existsSync(DB_PATH);
+  const raw = existed ? (read(DB_PATH) || {}) : { projects: [], tasks: [], usage: [], assets: [], versions: [], ideaDrafts: [] };
+  const d = migrateDb(structuredClone(raw));
+  if (!existed || JSON.stringify(raw) !== JSON.stringify(d)) write(DB_PATH, d);
   if (!fs.existsSync(SETTINGS_PATH)) {
     write(SETTINGS_PATH, { ...DEFAULT_SETTINGS });
   } else {
@@ -59,6 +74,13 @@ function ensure() {
     for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) {
       if (s[k] === undefined) { s[k] = v; ch = true; }
     }
+    // 迁移：旧默认模型升级为 3.0 系列；旧按次单价键迁移为新的按张 / 按秒键。
+    if (s.imageModel === 'qwen-image-3.0-pro' || s.imageModel === 'qwen-image-2.1-turbo') { s.imageModel = DEFAULT_IMAGE_MODEL; ch = true; }
+    if (String(s.videoModel || '').startsWith('wan2.')) { s.videoModel = DEFAULT_VIDEO_MODEL; ch = true; }
+    if (s.videoResolution === undefined) { s.videoResolution = DEFAULT_VIDEO_RESOLUTION; ch = true; }
+    // 旧 imageUnitPrice/videoUnitPrice 已弃用，移除以免与新计费口径混淆。
+    if ('imageUnitPrice' in s) { delete s.imageUnitPrice; ch = true; }
+    if ('videoUnitPrice' in s) { delete s.videoUnitPrice; ch = true; }
     if (ch) write(SETTINGS_PATH, s);
   }
 }
@@ -150,6 +172,7 @@ export const usage = {
       model: '',
       mode: '',
       scope: '',
+      taskId: '',
       promptTokens: 0,
       completionTokens: 0,
       reasoningTokens: 0,
@@ -164,17 +187,59 @@ export const usage = {
     db.update(d => { d.usage.unshift(rec); if (d.usage.length > 5000) d.usage.length = 5000; });
     return rec;
   },
+  // 冲正/退款：以负成本记录追加一条 reversal，按 refundKey 幂等。
+  // 个人版没有预充值钱包，退款语义 = 冲销已记账费用，而不是退现金；result 返回是否新建。
+  refund(entry = {}) {
+    const key = String(entry.refundKey || '').trim();
+    if (!key) throw Object.assign(new Error('退款缺少幂等键。'), { status: 400 });
+    let result = null;
+    db.update(d => {
+      if (d.usage.some(r => r.kind === 'refund' && r.refundKey === key)) {
+        result = { created: false, refundKey: key };
+        return;
+      }
+      const rec = {
+        id: uid(),
+        ts: new Date().toISOString(),
+        type: 'refund',
+        kind: 'refund',
+        refundKey: key,
+        refundOf: entry.refundOf || '',
+        taskId: entry.taskId || '',
+        model: entry.model || '',
+        mode: 'refund',
+        scope: '',
+        promptTokens: 0,
+        completionTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: 0,
+        cost: -Math.abs(Number(entry.amount) || 0),
+        reason: String(entry.reason || '任务失败或资产作废，冲销计费').slice(0, 200),
+      };
+      d.usage.unshift(rec);
+      if (d.usage.length > 5000) d.usage.length = 5000;
+      result = { created: true, refundKey: key, id: rec.id, amount: rec.cost };
+    });
+    return result;
+  },
+  refunds() {
+    return db.all().usage.filter(r => r.kind === 'refund');
+  },
   clear() { db.update(d => { d.usage = []; }); },
   report(days = 30) {
     const all = db.all().usage;
     const since = Date.now() - (Number(days) || 30) * 86400000;
     const rows = all.filter(r => new Date(r.ts).getTime() >= since);
+    const isRefund = r => r.kind === 'refund';
+    // 冲正行不增加调用次数 / token，只把负成本并入费用，使净额自动抵扣。
     const sum = acc => rows.reduce((a, r) => {
-      a.calls += 1;
-      a.promptTokens += r.promptTokens || 0;
-      a.completionTokens += r.completionTokens || 0;
-      a.reasoningTokens += r.reasoningTokens || 0;
-      a.totalTokens += r.totalTokens || 0;
+      if (!isRefund(r)) {
+        a.calls += 1;
+        a.promptTokens += r.promptTokens || 0;
+        a.completionTokens += r.completionTokens || 0;
+        a.reasoningTokens += r.reasoningTokens || 0;
+        a.totalTokens += r.totalTokens || 0;
+      }
       a.cost += r.cost || 0;
       return a;
     }, acc);
@@ -185,7 +250,8 @@ export const usage = {
     for (const r of rows) {
       const date = r.ts.slice(0, 10);
       const d = dailyMap.get(date) || { date, calls: 0, totalTokens: 0, cost: 0 };
-      d.calls += 1; d.totalTokens += r.totalTokens || 0; d.cost += r.cost || 0;
+      if (!isRefund(r)) { d.calls += 1; d.totalTokens += r.totalTokens || 0; }
+      d.cost += r.cost || 0;
       dailyMap.set(date, d);
     }
     const daily = [...dailyMap.values()].sort((a, b) => a.date.localeCompare(b.date))
@@ -195,7 +261,8 @@ export const usage = {
     for (const r of rows) {
       const m = r.model || 'unknown';
       const x = modelMap.get(m) || { model: m, calls: 0, totalTokens: 0, cost: 0 };
-      x.calls += 1; x.totalTokens += r.totalTokens || 0; x.cost += r.cost || 0;
+      if (!isRefund(r)) { x.calls += 1; x.totalTokens += r.totalTokens || 0; }
+      x.cost += r.cost || 0;
       modelMap.set(m, x);
     }
     const byModel = [...modelMap.values()].sort((a, b) => b.cost - a.cost)
@@ -221,13 +288,20 @@ export function makeProject(type, name) {
     worldview: {},
     knowledge: [],
     assets: [],
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    revision: 1,
+    versionHash: '',
+    cover: {},
+    viewLayouts: {},
+    audioSessions: [],
     settings: { format: 'hollywood', language: 'zh', exportConvention: 'hollywood' },
   };
   if (type === 'script') {
-    base.episodes = [{ id: uid(), title: '第 1 集', nodes: [], outline: [], beats: [], scenes: [], shots: [] }];
+    base.episodes = [{ id: uid(), title: '第 1 集', nodes: [], outline: [], beats: [], scenes: [], shots: [], revisionNotes: [], optionGroups: [] }];
   } else {
     base.episodes = [{ id: uid(), title: '第 1 集', reels: [] }];
     base.film = { orientation: 'landscape', productionType: 'live-action', cameraStyle: '', artStyle: '' };
   }
+  base.versionHash = stableHash(base);
   return base;
 }

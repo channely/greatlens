@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { settings, db, DATA_DIR, DB_PATH, SETTINGS_PATH } from './store.js';
+import { migrateDb } from './migrations.js';
 
 const SYNC_DIR = path.join(DATA_DIR, '.sync');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
@@ -47,9 +48,16 @@ function ensureRepo() {
   }
 }
 
+function copyDir(src, dest) {
+  const target = path.join(dest, path.basename(src));
+  if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+  if (fs.existsSync(src)) fs.cpSync(src, target, { recursive: true });
+}
+
 function writeSnapshot(device) {
   fs.writeFileSync(path.join(SYNC_DIR, 'db.json'), JSON.stringify(db.all(), null, 2));
   fs.writeFileSync(path.join(SYNC_DIR, 'settings.json'), JSON.stringify(snapshotSettings(), null, 2));
+  copyDir(path.join(DATA_DIR, 'versions'), SYNC_DIR);
   fs.writeFileSync(path.join(SYNC_DIR, 'snapshot.json'), JSON.stringify({
     app: 'GreatLens', version: 1, device: device || '未命名设备', exportedAt: new Date().toISOString(),
   }, null, 2));
@@ -161,7 +169,8 @@ export function pullSync() {
   if (!fs.existsSync(remoteDb)) throw Object.assign(new Error('远端快照中没有 db.json。'), { status: 502 });
   const parsed = JSON.parse(fs.readFileSync(remoteDb, 'utf8'));
   if (!Array.isArray(parsed.projects)) throw Object.assign(new Error('远端快照格式不正确。'), { status: 502 });
-  db.save(parsed);
+  db.save(migrateDb(parsed));
+  copyDir(path.join(SYNC_DIR, 'versions'), DATA_DIR);
 
   // 安全合并设置：只取非敏感字段
   const remoteSettings = JSON.parse(fs.readFileSync(path.join(SYNC_DIR, 'settings.json'), 'utf8'));
