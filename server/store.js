@@ -298,6 +298,18 @@ export function makeProject(type, name) {
   };
   if (type === 'script') {
     base.episodes = [{ id: uid(), title: '第 1 集', nodes: [], outline: [], beats: [], scenes: [], shots: [], revisionNotes: [], optionGroups: [] }];
+  } else if (type === 'virtual') {
+    // 科普叙事导演台：DSL 是事实来源，episode 仅占位不承载 DSL。
+    base.episodes = [{ id: uid(), title: '第 1 集', reels: [] }];
+    base.virtual = {
+      dsl: null,
+      compiled: { hash: '', dslHash: '', scenePlan: null, timeline: null, diagnostics: [], compiledAt: '' },
+      assets: { registryId: 'default', bindings: [] },
+      knowledgeState: { facts: [], transitions: [] },
+      ipLocks: [],
+      workflowRuns: [],
+      renderJobs: [],
+    };
   } else {
     base.episodes = [{ id: uid(), title: '第 1 集', reels: [] }];
     base.film = { orientation: 'landscape', productionType: 'live-action', cameraStyle: '', artStyle: '' };

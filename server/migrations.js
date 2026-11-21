@@ -83,6 +83,27 @@ function normalizeProject(project) {
     if (!Array.isArray(ep.optionGroups)) ep.optionGroups = [];
   }
   p.episodes = episodes;
+
+  // virtual 项目：科普叙事导演台数据。幂等补字段，不覆盖已有内容（DSL 是事实来源）。
+  if (p.type === 'virtual') {
+    if (!p.virtual || typeof p.virtual !== 'object' || Array.isArray(p.virtual)) p.virtual = {};
+    const v = p.virtual;
+    if (v.dsl !== null && (typeof v.dsl !== 'object' || Array.isArray(v.dsl))) v.dsl = null;
+    if (!v.compiled || typeof v.compiled !== 'object' || Array.isArray(v.compiled)) v.compiled = {};
+    if (typeof v.compiled.hash !== 'string') v.compiled.hash = '';
+    if (typeof v.compiled.dslHash !== 'string') v.compiled.dslHash = '';
+    if (!Array.isArray(v.compiled.diagnostics)) v.compiled.diagnostics = [];
+    if (v.compiled.scenePlan === undefined) v.compiled.scenePlan = null;
+    if (v.compiled.timeline === undefined) v.compiled.timeline = null;
+    if (typeof v.compiled.compiledAt !== 'string') v.compiled.compiledAt = '';
+    if (!v.assets || typeof v.assets !== 'object' || Array.isArray(v.assets)) v.assets = {};
+    if (typeof v.assets.registryId !== 'string') v.assets.registryId = 'default';
+    if (!Array.isArray(v.assets.bindings)) v.assets.bindings = [];
+    if (!v.knowledgeState || typeof v.knowledgeState !== 'object' || Array.isArray(v.knowledgeState)) v.knowledgeState = {};
+    if (!Array.isArray(v.knowledgeState.facts)) v.knowledgeState.facts = [];
+    if (!Array.isArray(v.knowledgeState.transitions)) v.knowledgeState.transitions = [];
+    for (const key of ['ipLocks', 'workflowRuns', 'renderJobs']) if (!Array.isArray(v[key])) v[key] = [];
+  }
   return p;
 }
 

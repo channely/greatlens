@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, FileText, Film, Trash2, CalendarDays, ArrowRight,
-  Upload, X, Loader2, Check, BookOpen, FileUp, Sparkles,
+  Upload, X, Loader2, Check, BookOpen, FileUp, Sparkles, Boxes,
 } from 'lucide-react';
 import { api } from '../api.js';
 import IdeaProjectDialog from '../components/IdeaProjectDialog.jsx';
@@ -63,7 +63,7 @@ export default function Projects() {
     try {
       const p = await api.projects.create(type, name.trim(), template);
       setName(''); setCreating(false);
-      nav(type === 'cinema' ? `/cinema/${p.id}` : `/edit/${p.id}`);
+      nav(type === 'virtual' ? `/virtual/${p.id}` : type === 'cinema' ? `/cinema/${p.id}` : `/edit/${p.id}`);
     } catch (err) { setError(err.message); }
   }
 
@@ -206,6 +206,9 @@ export default function Projects() {
             <button type="button" className={`type-option ${type === 'cinema' ? 'selected' : ''}`} onClick={() => setType('cinema')}>
               <Film size={22} /><strong>Cinema</strong><span>短片 / 分镜 / 最长 30 秒成片</span>
             </button>
+            <button type="button" className={`type-option ${type === 'virtual' ? 'selected' : ''}`} onClick={() => setType('virtual')}>
+              <Boxes size={22} /><strong>Virtual</strong><span>科普叙事 / 3D 导演台 / DSL 成片</span>
+            </button>
           </div>
           {type === 'script' && (
             <div className="template-picker">
@@ -241,12 +244,12 @@ export default function Projects() {
           {projects.map(p => (
             <div className="project-card" key={p.id}>
               <div className="project-card-top">
-                <span className={`badge ${p.type}`}>{p.type === 'script' ? 'SCRIPT' : 'CINEMA'}</span>
+                <span className={`badge ${p.type}`}>{p.type === 'script' ? 'SCRIPT' : p.type === 'virtual' ? 'VIRTUAL' : 'CINEMA'}</span>
                 <button className="icon-btn danger" title="删除" onClick={() => remove(p.id)}><Trash2 size={15} /></button>
               </div>
               <h3>{p.name}</h3>
               <div className="project-meta"><CalendarDays size={13} /> {new Date(p.updatedAt).toLocaleDateString('zh-CN')} · {p.episodeCount} 集</div>
-              <button className="btn btn-ghost full" onClick={() => nav(p.type === 'cinema' ? `/cinema/${p.id}` : `/edit/${p.id}`)}>
+              <button className="btn btn-ghost full" onClick={() => nav(p.type === 'virtual' ? `/virtual/${p.id}` : p.type === 'cinema' ? `/cinema/${p.id}` : `/edit/${p.id}`)}>
                 打开工作台 <ArrowRight size={15} />
               </button>
             </div>

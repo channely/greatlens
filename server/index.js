@@ -34,6 +34,15 @@ import { exportRender } from './export.js';
 import { convertScriptToCinema } from './toCinema.js';
 import { parseAttachment, supportedExtensions } from './attachments.js';
 import { modelCatalog, normalizeResolution } from './models.js';
+import {
+  organelleDialogueTemplate, validateDsl, normalizeDsl, applyPatches, dslHash,
+  generateDslFromNl, parseDslText, buildDslSystemPrompt,
+} from './virtualDsl.js';
+import { compileDsl } from './virtualInterpreter.js';
+import { virtualRegistry, loadCatalog, listVirtualAssets, bindVirtualBackground, resolveModel, clampControls } from './virtualScene.js';
+import { startWorkflow, advanceWorkflow, retryStep, workflowStatus } from './virtualWorkflow.js';
+import { createRenderJob, getRenderJob, completeRenderJob, generateVoiceover } from './virtualRender.js';
+import { createDemoProject, DEMO_NAME, DEMO_SEED } from './virtualDemo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -121,7 +130,7 @@ app.post('/api/projects/:id/to-cinema', wrap(async (req, res) => {
 
 app.post('/api/projects', (req, res) => {
   const { type = 'script', name = '未命名项目', template } = req.body || {};
-  if (!['script', 'cinema'].includes(type)) return res.status(400).json({ error: 'invalid type' });
+  if (!['script', 'cinema', 'virtual'].includes(type)) return res.status(400).json({ error: 'invalid type' });
   const p = applyStartTemplate(makeProject(type, name), template);
   db.update(d => { d.projects.unshift(p); });
   res.status(201).json(p);
@@ -235,7 +244,7 @@ app.post('/api/projects/:id/episodes', (req, res) => {
   const ep = db.update(d => {
     const p = d.projects.find(x => x.id === req.params.id);
     if (!p) return null;
-    const item = p.type === 'cinema'
+    const item = (p.type === 'cinema' || p.type === 'virtual')
       ? { id: uid(), title: req.body.title || `第 ${p.episodes.length + 1} 集`, reels: [] }
       : { id: uid(), title: req.body.title || `第 ${p.episodes.length + 1} 集`, nodes: [], outline: [], beats: [], scenes: [], shots: [] };
     p.episodes.push(item);
@@ -244,6 +253,197 @@ app.post('/api/projects/:id/episodes', (req, res) => {
   });
   if (!ep) return res.status(404).json({ error: 'not found' });
   res.status(201).json(ep);
+});
+
+// ---------- virtual production（科普叙事导演台）----------
+// 批次 1：DSL 核心。批次 2/6/7 会继续扩展 catalog/assets/render/workflow 路由。
+function findVirtual(id) {
+  const p = db.all().projects.find(x => x.id === id);
+  if (!p || p.type !== 'virtual') return null;
+  return p;
+}
+app.get('/api/virtual/demo', (_req, res) => res.json({ name: DEMO_NAME, seed: DEMO_SEED }));
+app.post('/api/virtual/demo', wrap(async (req, res) => {
+  const r = createDemoProject(req.body?.force === true);
+  res.status(r.created ? 201 : 200).json(r.project);
+}));
+app.get('/api/virtual/catalog', (_req, res) => res.json(loadCatalog()));
+app.get('/api/virtual/:id/assets', (req, res) => {
+  const p = findVirtual(req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  res.json(listVirtualAssets(req.params.id));
+});
+app.post('/api/virtual/:id/assets/bind-background', (req, res) => {
+  const p = findVirtual(req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  try {
+    const r = bindVirtualBackground(req.params.id, String(req.body?.assetId || ''));
+    res.json(r.ref);
+  } catch (e) { res.status(e.status || 422).json({ error: e.message }); }
+});
+app.get('/api/virtual/:id/dsl', (req, res) => {
+  const p = findVirtual(req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  res.json({ dsl: p.virtual?.dsl || null, compiled: p.virtual?.compiled || null });
+});
+app.post('/api/virtual/:id/dsl', wrap(async (req, res) => {
+  const p = findVirtual(req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  const seed = String(req.body?.seed || '').trim();
+  if (!seed) return res.status(422).json({ error: '缺少创意描述 seed' });
+  const result = await generateDslFromNl({ seed, registry: virtualRegistry(), brief: req.body?.brief || {} });
+  // 草稿不写项目；让用户在编辑器确认后再 PUT。
+  res.json(result);
+}));
+app.put('/api/virtual/:id/dsl', wrap(async (req, res) => {
+  const rawMatch = req.headers['if-match'] ?? req.body?.baseRevision;
+  const baseRevision = rawMatch === undefined || rawMatch === null || rawMatch === '' ? undefined
+    : Number(String(rawMatch).replace(/^"|"$/g, ''));
+  const check = validateDsl(req.body?.dsl ?? req.body, virtualRegistry());
+  if (!check.ok) return res.status(422).json({ error: 'DSL 校验未通过', diagnostics: check.diagnostics });
+  const saved = db.update(d => {
+    const idx = d.projects.findIndex(x => x.id === req.params.id);
+    if (idx < 0 || d.projects[idx].type !== 'virtual') return { missing: true };
+    const before = d.projects[idx];
+    if (Number.isFinite(baseRevision) && baseRevision !== Number(before.revision || 1)) return { conflict: true, revision: before.revision };
+    const after = { ...before, virtual: { ...before.virtual, dsl: check.dsl } };
+    after.updatedAt = new Date().toISOString();
+    after.revision = (before.revision || 1) + 1;
+    after.versionHash = stableHash(after);
+    try { autoVersionForSave(d, before, after, { kind: 'manual', name: 'DSL 更新' }); } catch {}
+    d.projects[idx] = after;
+    return { project: after };
+  });
+  if (saved.missing) return res.status(404).json({ error: 'not found' });
+  if (saved.conflict) return res.status(409).json({ error: 'revision 冲突', revision: saved.revision });
+  res.json({ dsl: saved.project.virtual.dsl, revision: saved.project.revision });
+}));
+app.post('/api/virtual/:id/validate', (req, res) => {
+  const p = findVirtual(req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  const check = validateDsl(req.body?.dsl ?? req.body, virtualRegistry());
+  res.status(check.ok ? 200 : 422).json({ ok: check.ok, diagnostics: check.diagnostics });
+});
+app.post('/api/virtual/:id/compile', (req, res) => {
+  const p = findVirtual(req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  const dsl = req.body?.dsl ?? p.virtual?.dsl;
+  if (!dsl) return res.status(422).json({ error: '当前项目没有 DSL，请先生成或保存' });
+  const result = compileDsl(dsl, virtualRegistry());
+  if (!result.ok) return res.status(422).json(result);
+  if (req.body?.persist === true) {
+    db.update(d => {
+      const proj = d.projects.find(x => x.id === req.params.id);
+      if (!proj) return;
+      proj.virtual.compiled = {
+        hash: result.hash, dslHash: dslHash(dsl), scenePlan: result.sceneGraph,
+        timeline: result.timeline, diagnostics: result.diagnostics, compiledAt: new Date().toISOString(),
+      };
+      // 知识状态从 DSL 投影；保留已存在的 transition 历史与已推进状态。
+      const prevFacts = new Map((proj.virtual.knowledgeState?.facts || []).map(f => [f.id, f]));
+      proj.virtual.knowledgeState = proj.virtual.knowledgeState || { facts: [], transitions: [] };
+      proj.virtual.knowledgeState.facts = result.knowledgeState.facts.map(f => {
+        const prev = prevFacts.get(f.id);
+        return prev ? { ...f, state: prev.state } : f;
+      });
+    });
+  }
+  res.json(result);
+});
+app.get('/api/virtual/:id/knowledge', (req, res) => {
+  const p = findVirtual(req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  res.json(p.virtual?.knowledgeState || { facts: [], transitions: [] });
+});
+app.post('/api/virtual/:id/knowledge/:kid/transition', (req, res) => {
+  const p = findVirtual(req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  const { to } = req.body || {};
+  const order = ['introduced', 'active', 'resolved'];
+  if (!order.includes(to)) return res.status(422).json({ error: `非法目标状态 ${to}` });
+  try {
+    const saved = db.update(d => {
+      const proj = d.projects.find(x => x.id === req.params.id);
+      const ks = proj.virtual.knowledgeState;
+      const fact = (ks.facts || []).find(f => f.id === req.params.kid);
+      if (!fact) throw Object.assign(new Error('知识点不存在'), { status: 404 });
+      const from = fact.state || 'introduced';
+      const fromIdx = order.indexOf(from), toIdx = order.indexOf(to);
+      if (toIdx < fromIdx) throw Object.assign(new Error(`不允许从 ${from} 回退到 ${to}`), { status: 422 });
+      const before = structuredClone(proj);
+      fact.state = to;
+      ks.transitions.push({ id: uid(), factId: fact.id, from, to, at: new Date().toISOString(), by: 'user' });
+      proj.updatedAt = new Date().toISOString();
+      proj.revision = (proj.revision || 1) + 1;
+      autoVersionForSave(d, before, proj);
+      return ks;
+    });
+    res.json(saved);
+  } catch (e) { res.status(e.status || 422).json({ error: e.message }); }
+});
+app.post('/api/virtual/:id/ip-locks', (req, res) => {
+  try {
+    const locks = db.update(d => {
+      const p = d.projects.find(x => x.id === req.params.id);
+      if (!p || p.type !== 'virtual') throw Object.assign(new Error('not found'), { status: 404 });
+      p.virtual.ipLocks = Array.isArray(req.body?.locks) ? req.body.locks : [];
+      return p.virtual.ipLocks;
+    });
+    res.json(locks);
+  } catch (e) { res.status(e.status || 422).json({ error: e.message }); }
+});
+
+// 工作流
+app.post('/api/virtual/:id/workflow', wrap(async (req, res) => {
+  res.status(201).json(startWorkflow(req.params.id));
+}));
+app.get('/api/virtual/:id/workflow', wrap(async (req, res) => {
+  const run = workflowStatus(req.params.id, req.query.runId);
+  res.json(run || { steps: [] });
+}));
+app.post('/api/virtual/:id/workflow/:runId/:stepId/advance', wrap(async (req, res) => {
+  res.json(advanceWorkflow(req.params.id, req.params.runId, req.params.stepId, req.body || {}));
+}));
+app.post('/api/virtual/:id/workflow/:runId/:stepId/retry', wrap(async (req, res) => {
+  res.json(retryStep(req.params.id, req.params.runId, req.params.stepId));
+}));
+
+// 渲染与配音
+app.post('/api/virtual/:id/render', wrap(async (req, res) => {
+  res.json(await createRenderJob(req.params.id, req.body || {}));
+}));
+app.get('/api/virtual/:id/render/:jobId', wrap(async (req, res) => {
+  res.json(getRenderJob(req.params.id, req.params.jobId));
+}));
+app.post('/api/virtual/:id/render/:jobId/complete', wrap(async (req, res) => {
+  res.json(completeRenderJob(req.params.id, req.params.jobId, req.body || {}));
+}));
+app.post('/api/virtual/:id/voiceover', wrap(async (req, res) => {
+  res.json(await generateVoiceover(req.params.id, req.body || {}));
+}));
+
+app.post('/api/virtual/:id/patch', (req, res) => {
+  const p = findVirtual(req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  if (!p.virtual?.dsl) return res.status(422).json({ error: '当前项目没有 DSL' });
+  const { dsl, results } = applyPatches(p.virtual.dsl, req.body?.patches, p.virtual.ipLocks || []);
+  const locked = results.some(r => r.code === 'IP_LOCK');
+  const failed = results.some(r => r.severity === 'error');
+  if (failed) return res.status(locked ? 409 : 422).json({ error: locked ? '字段被 IP 锁保护' : 'patch 未通过', results });
+  const saved = db.update(d => {
+    const idx = d.projects.findIndex(x => x.id === req.params.id);
+    if (idx < 0) return null;
+    const before = d.projects[idx];
+    const after = { ...before, virtual: { ...before.virtual, dsl } };
+    after.updatedAt = new Date().toISOString();
+    after.revision = (before.revision || 1) + 1;
+    after.versionHash = stableHash(after);
+    try { autoVersionForSave(d, before, after); } catch {}
+    d.projects[idx] = after;
+    return after;
+  });
+  if (!saved) return res.status(404).json({ error: 'not found' });
+  res.json({ dsl, results, revision: saved.revision });
 });
 
 // ---------- AI ----------

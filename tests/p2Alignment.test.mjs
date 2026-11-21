@@ -1,5 +1,6 @@
 // P2 对齐能力回归：AI 知识正文注入、Cinema 视频任务 reel 绑定、世界观值可写。
 import test, { before, after } from 'node:test';
+import { acquireTestPort } from './helpers/port.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -9,7 +10,8 @@ import { once } from 'node:events';
 import { buildMessages } from '../server/ai.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const PORT = 23000 + Math.floor(Math.random() * 18000);
+const portLease = acquireTestPort();
+const PORT = portLease.port;
 const BASE = `http://127.0.0.1:${PORT}/api`;
 let dataDir;
 let server;
@@ -36,6 +38,7 @@ before(async () => {
 });
 
 after(async () => {
+  portLease.release();
   if (server && !server.killed) { server.kill('SIGTERM'); await once(server, 'exit'); }
   if (dataDir) fs.rmSync(dataDir, { recursive: true, force: true });
 });

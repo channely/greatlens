@@ -1,5 +1,6 @@
 // idea-first brief 专业分析填充：seed 解构成六字段 + 失败本地兜底 + 不覆盖用户已填字段。
 import test, { before, after } from 'node:test';
+import { acquireTestPort } from './helpers/port.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -29,7 +30,8 @@ test('用户已填字段不被覆盖', async () => {
 
 // HTTP 端点（stub 模式）返回结构
 const ROOT = path.resolve(import.meta.dirname, '..');
-const PORT = 25000 + Math.floor(Math.random() * 15000);
+const portLease = acquireTestPort();
+const PORT = portLease.port;
 const BASE = `http://127.0.0.1:${PORT}/api`;
 let dataDir, server;
 
@@ -48,6 +50,7 @@ before(async () => {
 });
 
 after(async () => {
+  portLease.release();
   if (server && !server.killed) { server.kill('SIGTERM'); await once(server, 'exit'); }
   if (dataDir) fs.rmSync(dataDir, { recursive: true, force: true });
 });

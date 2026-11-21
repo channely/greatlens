@@ -1,4 +1,5 @@
 import test, { before, after } from 'node:test';
+import { acquireTestPort } from './helpers/port.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -7,7 +8,8 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const PORT = 40000 + Math.floor(Math.random() * 20000);
+const portLease = acquireTestPort();
+const PORT = portLease.port;
 const BASE = `http://127.0.0.1:${PORT}/api`;
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==';
 let dataDir;
@@ -39,6 +41,7 @@ before(async () => {
 });
 
 after(async () => {
+  portLease.release();
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');
     await Promise.race([once(server, 'exit'), new Promise(resolve => setTimeout(resolve, 2000))]);

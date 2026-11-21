@@ -10,3 +10,7 @@ data/.sync/
 .DS_Store
 # 逆向侦察的第三方资料快照不入库（版权与体积考虑）
 .research/
+# Polyspoon toolkit 运行时缓存不入库；生成的 GLB 在 public/models/ 正常提交
+.polyspoon/
+.tmp-polyspoon/
+.claude/skills/polyspoon/

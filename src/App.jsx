@@ -2,7 +2,7 @@ import React from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import {
   Clapperboard, Home as HomeIcon, FolderOpen, Settings as SettingsIcon,
-  BarChart3, Images, FolderSync as CloudSync, Sun, Moon,
+  BarChart3, Images, FolderSync as CloudSync, Sun, Moon, Boxes, Loader2,
 } from 'lucide-react';
 import { currentBackendBase } from './api.js';
 import { useTheme } from './theme.js';
@@ -10,6 +10,8 @@ import Home from './pages/Home.jsx';
 import Projects from './pages/Projects.jsx';
 import Editor from './pages/Editor.jsx';
 import Cinema from './pages/Cinema.jsx';
+// 虚拟制片（含 Three.js/R3F）按需加载，避免拖慢首屏。
+const VirtualProduction = React.lazy(() => import('./pages/VirtualProduction.jsx'));
 import Settings from './pages/Settings.jsx';
 import Usage from './pages/Usage.jsx';
 import Assets from './pages/Assets.jsx';
@@ -21,6 +23,7 @@ const NAV_GROUPS = [
     { to: '/', label: '首页', icon: HomeIcon },
     { to: '/projects', label: '项目', icon: FolderOpen },
     { to: '/assets', label: '素材', icon: Images },
+    { to: '/virtual', label: '虚拟制片', icon: Boxes },
   ] },
   { label: '运营', links: [
     { to: '/usage', label: '用量', icon: BarChart3 },
@@ -84,16 +87,20 @@ function Shell() {
           <span className="news-right">{source} · 本地优先</span>
         </div>
         <div className="main-content">
+          <React.Suspense fallback={<div className="vp-page"><div className="card"><Loader2 size={18} className="spin" /> 加载模块…</div></div>}>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/edit/:id" element={<Editor />} />
             <Route path="/cinema/:id" element={<Cinema />} />
+            <Route path="/virtual" element={<VirtualProduction />} />
+            <Route path="/virtual/:id" element={<VirtualProduction />} />
             <Route path="/usage" element={<Usage />} />
             <Route path="/assets" element={<Assets />} />
             <Route path="/sync" element={<Sync />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
+          </React.Suspense>
         </div>
       </div>
     </div>

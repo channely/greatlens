@@ -1,0 +1,52 @@
+{
+  "family": "slime",
+  "version": "2.0.0",
+  "dimensions": [
+    1.4447075128555298,
+    1.2453483695317118,
+    1.4174920320510864
+  ],
+  "anchors": {
+    "ground": [
+      0,
+      0,
+      0
+    ],
+    "top": [
+      0,
+      1.2453483695317118,
+      0
+    ]
+  },
+  "geometry": {
+    "errors": [],
+    "parts": 4,
+    "triangles": 4082,
+    "vertices": 12246,
+    "bounds": {
+      "min": [
+        -0.7483996152877808,
+        -0.00005701725967810489,
+        -0.7185723185539246
+      ],
+      "max": [
+        0.696307897567749,
+        1.2452913522720337,
+        0.6989197134971619
+      ]
+    }
+  },
+  "glbSha256": "b80c7cd2ec35d0a2115481d3eb76babe7ffd44c578d4276476708f10da4cba71",
+  "formats": {},
+  "controls": "asset.controls.json",
+  "toolkit": {
+    "recipe": "bench",
+    "recipeVersion": "1.1.0",
+    "deliveryRevision": 4,
+    "sha256": "da63ef6e143b9c75d64efa2fb0d1ef61e1972a8fe4708c1dae21b1c0097610dd",
+    "sourceHash": "6aa0892764ae32e723fa2f58ae044b051f4de57b22dbab6bb49ce2342412459c"
+  },
+  "limits": [
+    "Geometry/export evidence only; inspect actual views and verify the requested target separately."
+  ]
+}

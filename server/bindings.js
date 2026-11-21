@@ -9,12 +9,12 @@ const ENTITY_GROUPS = {
   prop: 'props',
 };
 const ALLOWED_SLOTS = {
-  project: ['posterImage', 'asset'],
-  character: ['lookImage', 'posterImage', 'voiceRef'],
+  project: ['posterImage', 'asset', 'background'],
+  character: ['lookImage', 'posterImage', 'voiceRef', 'model'],
   location: ['lookImage', 'posterImage'],
-  prop: ['lookImage', 'posterImage'],
+  prop: ['lookImage', 'posterImage', 'model'],
   knowledge: ['image'],
-  scene: ['backgroundImage', 'posterImage'],
+  scene: ['backgroundImage', 'posterImage', 'environment'],
   shot: ['refImage', 'storyboardImage'],
 };
 

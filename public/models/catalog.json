@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "note": "虚拟制片可用 3D 模型清单。GLB 由 Polyspoon toolkit 本地生成（Apache-2.0），runtimeControls 为浏览器可实时调整的子集。source=nvidia 通道预留，须带兼容许可证方可接入。",
+  "models": [
+    {
+      "id": "nucleus",
+      "name": "细胞核",
+      "family": "nucleus",
+      "source": "polyspoon",
+      "glb": "/models/nucleus/asset.glb",
+      "controls": "/models/nucleus/asset.controls.json",
+      "license": "Apache-2.0",
+      "runtimeControls": ["color", "emissive", "emissiveIntensity", "scale", "rotationY", "visible"],
+      "bounds": { "radius": 1.0 }
+    },
+    {
+      "id": "mitochondrion",
+      "name": "线粒体",
+      "family": "mitochondrion",
+      "glb": "/models/mitochondrion/asset.glb",
+      "controls": "/models/mitochondrion/asset.controls.json",
+      "license": "Apache-2.0",
+      "source": "polyspoon",
+      "runtimeControls": ["color", "emissive", "emissiveIntensity", "scale", "rotationY", "visible"],
+      "bounds": { "radius": 0.8 },
+      "fallbackUrl": "/models/mitochondrion.glb"
+    },
+    {
+      "id": "ribosome",
+      "name": "核糖体",
+      "family": "ribosome",
+      "glb": "/models/ribosome/asset.glb",
+      "controls": "/models/ribosome/asset.controls.json",
+      "license": "Apache-2.0",
+      "source": "polyspoon",
+      "runtimeControls": ["color", "emissive", "scale", "rotationY"],
+      "bounds": { "radius": 0.4 }
+    },
+    {
+      "id": "membrane",
+      "name": "细胞膜片段",
+      "family": "membrane",
+      "glb": "/models/membrane/asset.glb",
+      "controls": "/models/membrane/asset.controls.json",
+      "license": "Apache-2.0",
+      "source": "polyspoon",
+      "runtimeControls": ["color", "emissive", "scale"],
+      "bounds": { "radius": 2.0 }
+    }
+  ]
+}

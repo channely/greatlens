@@ -63,6 +63,20 @@ function posterPrompt(project, body) {
   return extra ? `${lines}\n补充要求：${extra}` : lines;
 }
 
+// 虚拟制片环境基底：MVP 用现有图像生成静态背景；DSL 中 environment 仅占位。
+function virtualBackgroundPrompt(project, body) {
+  const dsl = project.virtual?.dsl;
+  const env = dsl?.environment || {};
+  const lines = [
+    `科普短视频背景概念图：${project.name}`,
+    dsl?.meta?.title ? `主题：${dsl.meta.title}` : '',
+    '细胞内部微观世界，扁平科普插画风格，柔和发光，中心留白供角色对话，无文字、无水印',
+    env.note ? `说明：${String(env.note).slice(0, 120)}` : '',
+  ].filter(Boolean).join('\n');
+  const extra = String(body.extraPrompt || '').trim();
+  return extra ? `${lines}\n补充要求：${extra}` : lines;
+}
+
 // 分镜连续性硬约束（对齐 laper）：后续镜头要求前帧时，若前一镜没有可用的分镜图，
 // 在派发任务之前阻断——不发任务、不扣费。参考位次序固定，不可对调。
 function continuityFrame(project, body) {
@@ -83,17 +97,21 @@ export async function createGeneration(projectId, body = {}) {
   if (!project) throw bad('项目不存在', 404);
   const purpose = String(body.purpose || 'scene');
   const isPoster = purpose === 'poster';
+  const isVirtualBg = purpose === 'virtual-background';
+  if (isVirtualBg && project.type !== 'virtual') throw bad('virtual-background 仅用于 virtual 项目', 422);
   // 连续性检查必须发生在任何 generateImage / generateVideo 之前。
   const prevFrame = continuityFrame(project, body);
-  // 海报始终基于项目整体，写 project.posterImage；不进入剧本节点，也不需要实体目标。
-  const target = isPoster ? { name: project.name, fields: [] } : targetOf(project, body);
-  const prompt = isPoster ? posterPrompt(project, body) : groundedPrompt(project, body, target, prevFrame);
+  // 海报/虚拟背景都基于项目整体，不需要实体目标。
+  const target = (isPoster || isVirtualBg) ? { name: project.name, fields: [] } : targetOf(project, body);
+  const prompt = isPoster ? posterPrompt(project, body)
+    : isVirtualBg ? virtualBackgroundPrompt(project, body)
+    : groundedPrompt(project, body, target, prevFrame);
   const binding = body.skipBinding ? null : {
-    kind: isPoster ? 'project' : String(body.targetKind || 'project'),
+    kind: isPoster || isVirtualBg ? 'project' : String(body.targetKind || 'project'),
     projectId,
-    entityId: isPoster ? project.id : String(body.targetId || project.id),
-    episodeId: isPoster ? '' : String(body.episodeId || project.episodes?.[0]?.id || ''),
-    slot: isPoster ? 'posterImage' : String(body.slot || 'lookImage'),
+    entityId: isPoster || isVirtualBg ? project.id : String(body.targetId || project.id),
+    episodeId: isPoster || isVirtualBg ? '' : String(body.episodeId || project.episodes?.[0]?.id || ''),
+    slot: isPoster ? 'posterImage' : isVirtualBg ? 'background' : String(body.slot || 'lookImage'),
   };
   const request = { purpose, targetKind: binding?.kind || '', targetId: binding?.entityId || '', prompt, extraPrompt: body.extraPrompt || '' };
 

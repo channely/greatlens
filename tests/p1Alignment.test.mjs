@@ -1,5 +1,6 @@
 // P1 对齐能力回归：分镜连续性硬约束 + Script→Cinema 显式转换。
 import test, { before, after } from 'node:test';
+import { acquireTestPort } from './helpers/port.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -8,7 +9,8 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const PORT = 21000 + Math.floor(Math.random() * 20000);
+const portLease = acquireTestPort();
+const PORT = portLease.port;
 const BASE = `http://127.0.0.1:${PORT}/api`;
 let dataDir;
 let server;
@@ -40,6 +42,7 @@ before(async () => {
 });
 
 after(async () => {
+  portLease.release();
   if (server && !server.killed) { server.kill('SIGTERM'); await once(server, 'exit'); }
   if (dataDir) fs.rmSync(dataDir, { recursive: true, force: true });
 });

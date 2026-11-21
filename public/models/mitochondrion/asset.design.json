@@ -1,0 +1,31 @@
+{
+  "formatVersion": 1,
+  "family": "slime",
+  "familyVersion": "2.0.0",
+  "requested": {
+    "form": "lumpy",
+    "mood": "happy",
+    "crust": true,
+    "height": 0.8,
+    "color.body": "#ef4444",
+    "color.shine": "#fca5a5",
+    "color.accent": "#b91c1c"
+  },
+  "applied": {
+    "height": 0.8,
+    "width": 0.9,
+    "form": "lumpy",
+    "mood": "happy",
+    "eyeSize": 0.13,
+    "crown": false,
+    "crust": true,
+    "seed": 7,
+    "colorway": "lime",
+    "color.body": "#ef4444",
+    "color.shine": "#fca5a5",
+    "color.eye": "#fbfbf6",
+    "color.pupil": "#1f2a24",
+    "color.accent": "#b91c1c",
+    "color.glow": "#ff8fa3"
+  }
+}
