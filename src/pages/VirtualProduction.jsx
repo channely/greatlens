@@ -186,6 +186,8 @@ export default function VirtualProduction() {
   }, [id]);
 
   const refresh = useCallback(async () => { await loadProject(); }, [loadProject]);
+  // 导出依赖导演台 WebGL 画布，先切到导演台确保画布已挂载再打开对话框。
+  const openExport = useCallback(() => { setTab('console'); setExportOpen(true); }, []);
   const errorCount = diagnostics.filter(d => d.severity === 'error').length;
 
   // ---- 无 id：项目列表 ----
@@ -244,7 +246,7 @@ export default function VirtualProduction() {
         <div className="vp-head-actions">
           <Link className="btn btn-ghost" to="/virtual">返回列表</Link>
           {errorCount > 0 && <span className="vp-chip danger"><AlertTriangle size={13} /> {errorCount} 错误</span>}
-          <button className="btn btn-primary" onClick={() => setExportOpen(true)} disabled={!compiled?.ok}>
+          <button className="btn btn-primary" onClick={openExport} disabled={!compiled?.ok}>
             <Download size={15} /> 导出成片
           </button>
         </div>
@@ -300,7 +302,7 @@ export default function VirtualProduction() {
         <div className="card vp-export-intro">
           <h3>导出成片</h3>
           <p className="muted">浏览器同源导出：把导演台的 3D 预演录制成 WebM，混入 AI 配音并把字幕烧录进画面。输出前请确认 DSL 已编译成功。</p>
-          {compiled?.ok ? <button className="btn btn-primary" onClick={() => setExportOpen(true)}><Download size={15} /> 开始导出</button>
+          {compiled?.ok ? <button className="btn btn-primary" onClick={openExport}><Download size={15} /> 开始导出</button>
             : <p className="vp-stage-empty"><AlertTriangle size={15} /> DSL 尚未编译成功，无法导出。</p>}
         </div>
       )}
@@ -308,7 +310,7 @@ export default function VirtualProduction() {
       {exportOpen && (
         <ExportDialog
           project={project} compiled={compiled} dsl={dsl}
-          playhead={playhead} setPlayhead={setPlayhead}
+          playhead={playhead} setPlayhead={setPlayhead} setSelectedShot={setSelectedShot}
           onClose={() => setExportOpen(false)} onNotice={setNotice} setError={setError}
         />
       )}

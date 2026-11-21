@@ -3,7 +3,7 @@ import { Download, X, Loader2, Check, Volume2, Subtitles, AlertTriangle, Play } 
 import { api } from '../../api.js';
 import { createBrowserRender, blobToBase64, recorderSupported } from './exportAdapter.js';
 
-export default function ExportDialog({ project, compiled, dsl, playhead, setPlayhead, onClose, onNotice, setError }) {
+export default function ExportDialog({ project, compiled, dsl, playhead, setPlayhead, setSelectedShot, onClose, onNotice, setError }) {
   const [mode, setMode] = useState('720p');
   const [burn, setBurn] = useState(true);
   const [withVoice, setWithVoice] = useState(true);
@@ -14,6 +14,7 @@ export default function ExportDialog({ project, compiled, dsl, playhead, setPlay
 
   const total = compiled?.timeline?.totalSec || 30;
   const dialogue = compiled?.timeline?.dialogue || [];
+  const shots = compiled?.timeline?.shots || [];
 
   useEffect(() => {
     // 预生成配音（用户手势已发生在打开对话框时）：逐角色 TTS 并拼成一条音轨。
@@ -34,12 +35,25 @@ export default function ExportDialog({ project, compiled, dsl, playhead, setPlay
       if (!recorderSupported()) throw new Error('当前浏览器不支持导出（需 Chrome/Edge 的 MediaRecorder）。');
       const job = await api.virtual.render(project.id, { mode: 'browser', ...{ width: dims[0], height: dims[1], fps: 30, burnSubtitles: burn, durationSec: total } });
       setPlayhead(0);
+      if (setSelectedShot && shots.length) setSelectedShot(shots[0]);
       await new Promise(r => setTimeout(r, 350)); // 让相机架回到起点
       const canvas = window.__glVirtualCanvas;
+      // 只在跨越镜头边界时切换相机，避免每帧 setState 拖慢录制。
+      let lastShotIdx = 0;
+      const onFrame = t => {
+        let idx = 0;
+        for (let i = 0; i < shots.length; i++) if (t >= shots[i].startSec) idx = i;
+        if (idx !== lastShotIdx) {
+          lastShotIdx = idx;
+          if (setSelectedShot) setSelectedShot(shots[idx]);
+        }
+      };
       const { blob } = await createBrowserRender({
         webglCanvas: canvas, dialogue, audioUrl: voiceUrl, width: dims[0], height: dims[1],
-        fps: 30, burnSubtitles: burn, durationSec: total, onProgress: setProgress,
+        fps: 30, burnSubtitles: burn, durationSec: total, onProgress: setProgress, onFrame,
       });
+      // 录制完成后恢复首个镜头，保持导演台状态一致。
+      if (setSelectedShot && shots.length) setSelectedShot(shots[0]);
       const base64 = await blobToBase64(blob);
       const done = await api.virtual.completeRender(project.id, job.jobId, {
         dataBase64: base64, mimeType: blob.type, durationSec: total,

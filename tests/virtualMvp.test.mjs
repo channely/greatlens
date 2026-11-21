@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
+const MIN_WEBM_STUB_BYTES = 1024; // 后端 saveBase64Asset 的最小合法体积
 let server, dataDir, BASE, PORT;
 
 async function api(p, opts = {}) {
@@ -89,7 +90,12 @@ test('MVP 端到端：DSL → 编译 → 知识状态 → 工作流 → 渲染�
   assert.equal(render.body.status, 'awaiting-browser');
   const job = await api(`/virtual/${id}/render/${render.body.jobId}`);
   assert.equal(job.body.id, render.body.jobId);
-  const tinyWebm = Buffer.from('GkXfo0AgQoaBAUL3gQFC8oMOTl3A==', 'base64').toString('base64');
+  // 构造一个带合法 EBML 头、体积达标的最小 WebM stub（零扣费、仅验证落库流程）。
+  const webmStub = Buffer.concat([
+    Buffer.from('1a45dfa340204286810142f7810142f2830e4e5dc0', 'hex'),
+    Buffer.alloc(MIN_WEBM_STUB_BYTES - 21, 0),
+  ]);
+  const tinyWebm = webmStub.toString('base64');
   const done = await api(`/virtual/${id}/render/${render.body.jobId}/complete`, {
     method: 'POST', body: JSON.stringify({
       dataBase64: tinyWebm, mimeType: 'video/webm;codecs=vp9', durationSec: 30,

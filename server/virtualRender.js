@@ -52,11 +52,26 @@ export function getRenderJob(projectId, jobId) {
   return job;
 }
 
+// WebM/Matroska EBML 魔数 1A 45 DF A3。有效成片必须以此开头。
+const EBML_MAGIC = [0x1a, 0x45, 0xdf, 0xa3];
+const MIN_VIDEO_BYTES = 1024;
+
+// 纯函数：校验成片字节是否是有效 WebM 容器。抽出来便于单测与前端口径对齐。
+export function validateVideoBuffer(buf, ext = '.webm') {
+  if (!buf || !buf.length) return '成片数据为空';
+  if (buf.length > 200 * 1024 * 1024) return '成片超过 200MB 上限';
+  if (ext === '.webm') {
+    if (buf.length < MIN_VIDEO_BYTES) return `成片数据过小（${buf.length} 字节），未产生有效画面，请重新导出`;
+    if (!EBML_MAGIC.every((m, i) => buf[i] === m)) return '成片格式无效：不是 WebM 容器，请重新导出';
+  }
+  return null;
+}
+
 export function saveBase64Asset(dataBase64, ext = '.webm', meta = {}) {
   if (!dataBase64 || typeof dataBase64 !== 'string') throw BAD('缺少 dataBase64');
   const buf = Buffer.from(dataBase64, 'base64');
-  if (!buf.length) throw BAD('成片数据为空');
-  if (buf.length > 200 * 1024 * 1024) throw BAD('成片超过 200MB 上限');
+  const invalid = validateVideoBuffer(buf, ext);
+  if (invalid) throw BAD(invalid);
   const id = crypto.randomUUID();
   const filename = `virtual-${Date.now()}-${id.slice(0, 8)}${ext}`;
   fs.mkdirSync(ASSETS_DIR, { recursive: true });

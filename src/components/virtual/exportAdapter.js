@@ -4,6 +4,21 @@
 const MIME_CANDIDATES = [
   'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8,opus', 'video/webm',
 ];
+// WebM/Matroska 容器头 1A 45 DF A3。导出的有效 WebM 一定以此开头。
+const EBML_MAGIC = [0x1a, 0x45, 0xdf, 0xa3];
+// 低于此体积基本可以断定没有真实帧（一个 30s/720p WebM 至少几十 KB）。
+const MIN_VALID_BYTES = 1024;
+
+// 同步可做的粗检（体积）；容器魔数由 isWebMBytes 异步复核。
+export function looksLikeWebM(blob) {
+  return !!blob && blob.size >= MIN_VALID_BYTES;
+}
+
+export function isWebMBytes(buf) {
+  if (!buf || buf.byteLength < 4) return false;
+  const b = new Uint8Array(buf);
+  return EBML_MAGIC.every((m, i) => b[i] === m);
+}
 
 export function recorderSupported() {
   return typeof window !== 'undefined' && typeof MediaRecorder !== 'undefined'
@@ -19,6 +34,7 @@ async function fetchAudioBuffer(url, audioCtx) {
   if (!url) return null;
   try {
     const res = await fetch(url);
+    if (!res.ok) return null;
     const arr = await res.arrayBuffer();
     return await audioCtx.decodeAudioData(arr);
   } catch { return null; }
@@ -48,15 +64,23 @@ function drawSubtitle(ctx, text, w, h) {
  */
 export async function createBrowserRender({
   webglCanvas, dialogue = [], audioUrl = null, width = 1280, height = 720,
-  fps = 30, burnSubtitles = true, durationSec = 30, onProgress,
+  fps = 30, burnSubtitles = true, durationSec = 30, onProgress, onFrame,
 }) {
   if (!recorderSupported()) throw new Error('当前浏览器不支持 MediaRecorder/captureStream 导出，请换用 Chrome 或 Edge。');
   if (!webglCanvas) throw new Error('导演台画布尚未就绪，无法导出。');
+  // 画布必须已挂载且有实际尺寸；否则 drawImage 只能读到空白，产出损坏文件。
+  if (!webglCanvas.isConnected || !webglCanvas.width || !webglCanvas.height) {
+    throw new Error('导演台画布当前不可见，请先切换到「导演台」页签再导出。');
+  }
 
   const offscreen = document.createElement('canvas');
   offscreen.width = width; offscreen.height = height;
-  const ctx = offscreen.getContext('2d');
-  const stream = offscreen.captureStream(fps);
+  const ctx = offscreen.getContext('2d', { alpha: false });
+  ctx.fillStyle = '#0d1a14';
+  ctx.fillRect(0, 0, width, height);
+  // 帧率 0：完全由我们主动 requestFrame 驱动，避免 rAF 被后台节流导致漏帧/空文件。
+  const stream = offscreen.captureStream(0);
+  const videoTrack = stream.getVideoTracks()[0];
 
   // Web Audio：混入配音轨（若有）。
   let audioCtx = null, dest = null;
@@ -82,25 +106,49 @@ export async function createBrowserRender({
     recorder.onerror = e => reject(e.error || new Error('录制失败'));
   });
 
-  recorder.start(200);
+  recorder.start(250);
   const startAt = performance.now();
-  let raf;
-  const frame = () => {
+  let lastFrameErr = null;
+  // 用定时器而非 rAF：导出期间页面可见且进度条在更新，setInterval 能稳定产出帧。
+  const drawOneFrame = () => {
     const t = (performance.now() - startAt) / 1000;
-    ctx.drawImage(webglCanvas, 0, 0, width, height);
-    if (burnSubtitles) {
-      const line = dialogue.find(d => t >= d.startSec && t <= d.endSec);
-      if (line) drawSubtitle(ctx, line.text, width, height);
-    }
+    try {
+      ctx.drawImage(webglCanvas, 0, 0, width, height);
+      if (burnSubtitles) {
+        const line = dialogue.find(d => t >= d.startSec && t <= d.endSec);
+        if (line) drawSubtitle(ctx, line.text, width, height);
+      }
+    } catch (e) { lastFrameErr = e; }
+    // 主动推一帧到录制流；requestFrame 缺失时回退（captureStream(0) 下无帧会导致空文件）。
+    try { videoTrack?.requestFrame?.(); } catch {}
+    onFrame?.(t);
     onProgress?.(Math.min(1, t / durationSec));
-    if (t < durationSec) raf = requestAnimationFrame(frame);
-    else recorder.stop();
+    return t >= durationSec;
   };
-  raf = requestAnimationFrame(frame);
-  const blob = await done;
-  cancelAnimationFrame(raf);
-  if (audioCtx) { try { await audioCtx.close(); } catch {} }
-  stream.getTracks().forEach(t => t.stop && t.stop());
+
+  const timer = setInterval(() => {
+    if (drawOneFrame()) {
+      clearInterval(timer);
+      if (recorder.state !== 'inactive') recorder.stop();
+    }
+  }, Math.max(16, Math.round(1000 / fps)));
+
+  let blob;
+  try {
+    blob = await done;
+  } finally {
+    clearInterval(timer);
+    if (audioCtx) { try { await audioCtx.close(); } catch {} }
+    stream.getTracks().forEach(t => t.stop && t.stop());
+  }
+  if (lastFrameErr) throw new Error(`录制画面时出错：${lastFrameErr.message}`);
+  // 关键防线：绝不允许把空白/残片当作成功成片上传（与后端 validateVideoBuffer 口径一致）。
+  if (!looksLikeWebM(blob)) {
+    throw new Error(`录制结果异常（仅 ${blob.size} 字节，未产生有效画面）。请确认场景已编译、画布可见后重试，或降低分辨率再试。`);
+  }
+  if (!isWebMBytes(await blob.slice(0, 4).arrayBuffer())) {
+    throw new Error('录制结果不是有效的 WebM 容器，请重试导出。');
+  }
   return { blob, durationSec, mimeType: mimeType || 'video/webm' };
 }
 

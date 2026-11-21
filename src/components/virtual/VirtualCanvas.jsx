@@ -165,7 +165,9 @@ export default function VirtualCanvas({ compiled, playhead, selectedShot }) {
   const onCreated = state => { window.__glVirtualCanvas = state.gl.domElement; };
   return (
     <div className="vp-canvas-wrap">
-      <Canvas shadows camera={{ position: [0, 1.6, 5], fov: 45 }} dpr={[1, 1.5]} onCreated={onCreated}>
+      {/* preserveDrawingBuffer 必须开启：否则合成后 WebGL 缓冲被清空，导出时 drawImage 只能读到空白帧 */}
+      <Canvas shadows camera={{ position: [0, 1.6, 5], fov: 45 }} dpr={[1, 1.5]}
+        gl={{ preserveDrawingBuffer: true }} onCreated={onCreated}>
         <Suspense fallback={null}>
           <Scene compiled={compiled} selectedShot={selectedShot} />
         </Suspense>

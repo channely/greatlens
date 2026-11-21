@@ -3,6 +3,21 @@ import assert from 'node:assert/strict';
 import { isSafeModelUrl, resolveModel, clampControls } from '../server/virtualScene.js';
 import { validateDsl, applyPatches } from '../server/virtualDsl.js';
 import { organelleDialogueTemplate } from '../server/virtualDsl.js';
+import { validateVideoBuffer } from '../server/virtualRender.js';
+
+test('成片校验拒绝损坏/空白/伪造 WebM（导出无法观看的根因防线）', () => {
+  // 用户实际遇到的 7 字节残片
+  assert.match(validateVideoBuffer(Buffer.from('a29bac6dab1eeb', 'hex')), /过小|无效/);
+  assert.match(validateVideoBuffer(Buffer.alloc(0)), /空/);
+  // 有 EBML 头但体积不足
+  assert.match(validateVideoBuffer(Buffer.from('1a45dfa3', 'hex')), /过小/);
+  // 体积够但没有 EBML 魔数（例如 MP4 冒充 webm）
+  const noMagic = Buffer.alloc(2048, 0);
+  assert.match(validateVideoBuffer(noMagic), /不是 WebM/);
+  // 合法 stub：EBML 头 + 足量字节
+  const good = Buffer.concat([Buffer.from('1a45dfa340204286810142f7810142f2830e4e5dc0', 'hex'), Buffer.alloc(2000, 0)]);
+  assert.equal(validateVideoBuffer(good), null);
+});
 
 test('拒绝路径穿越与远程协议（防 SSRF / 任意文件读取）', () => {
   const bad = [
